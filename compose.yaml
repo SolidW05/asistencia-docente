@@ -1,0 +1,61 @@
+name: metodologia-geocercas
+services:
+  db:
+    image: postgis/postgis:16-3.5@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-asistencia}
+      POSTGRES_USER: ${POSTGRES_USER:-asistencia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo-change-me}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  backend:
+    build:
+      context: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-asistencia}
+      DATABASE_USER: ${POSTGRES_USER:-asistencia}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-demo-change-me}
+      DEMO_ADMIN_CODES: ${DEMO_ADMIN_CODES:-0000001}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      MAX_ACCURACY_METERS: ${MAX_ACCURACY_METERS:-50}
+      MAX_AGE_SECONDS: ${MAX_AGE_SECONDS:-120}
+      EARLY_MINUTES: ${EARLY_MINUTES:-15}
+      LATE_MINUTES: ${LATE_MINUTES:-15}
+      TIME_ZONE: America/Mexico_City
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 15
+    restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-8088}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  postgres_data:

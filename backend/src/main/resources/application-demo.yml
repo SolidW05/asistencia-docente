@@ -1,0 +1,4 @@
+app:
+  demo:
+    admin-codes: ${DEMO_ADMIN_CODES:${DEMO_ADMIN_CODE:0000001}}
+    simulated-authentication: true
