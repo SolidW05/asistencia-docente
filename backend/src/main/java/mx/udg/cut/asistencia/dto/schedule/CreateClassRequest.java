@@ -1,6 +1,7 @@
 package mx.udg.cut.asistencia.dto.schedule;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalTime;
 import java.util.List;
@@ -10,8 +11,9 @@ public record CreateClassRequest(
         @NotNull
         @Size(min = 1, max = 120)
         String name,
-        @NotNull
         UUID teacherId,
+        @Pattern(regexp = "[0-9]{7}", message = "El código docente debe tener siete dígitos.")
+        String teacherCode,
         @NotNull
         UUID campusId,
         List<UUID> allowedModuleIds,
@@ -24,6 +26,14 @@ public record CreateClassRequest(
 ) {
     public ClassInput input() {
         return new ClassInput(
-                name, teacherId, campusId, allowedModuleIds, dayOfWeek, startTime, endTime, active);
+                name,
+                teacherId,
+                teacherCode,
+                campusId,
+                allowedModuleIds,
+                dayOfWeek,
+                startTime,
+                endTime,
+                active);
     }
 }

@@ -366,3 +366,14 @@ td small { margin-top: 5px; color: #8a9690; font-size: 9px; line-height: 1.5; }
   .field-grid-three { grid-template-columns: 1fr; gap: 0; }
   .button-row > .button { flex: 1; }
 }
+
+/* Revisión e historial de movimientos */
+.attendance-history-card { padding: 18px 0; border-bottom: 1px solid #e4ebe6; }
+.attendance-history-card:last-child { border-bottom: 0; }
+.attendance-history-card h3 { margin: 0 0 6px; color: #3e5249; }
+.attendance-history-card p { color: #596b62; font-size: 12px; overflow-wrap: anywhere; }
+.attendance-timeline { padding-left: 24px; color: #596b62; font-size: 12px; }
+.attendance-timeline li { padding: 8px 0; }
+.attendance-timeline li > span { display: block; margin: 6px 0; }
+.topnav { overflow-x: auto; flex-shrink: 1; }
+.admin-tabs { flex-wrap: wrap; }

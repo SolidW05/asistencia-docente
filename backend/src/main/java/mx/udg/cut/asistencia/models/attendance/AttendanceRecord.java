@@ -78,6 +78,14 @@ public class AttendanceRecord {
         return status;
     }
 
+    /** Applies the only administrative transition allowed by the MVP. */
+    public boolean confirmFromReview() {
+        if (status != AttendanceStatus.PENDING_REVIEW)
+            return false;
+        status = AttendanceStatus.CONFIRMED;
+        return true;
+    }
+
     public SpatialResult getSpatialResult() {
         return spatialResult;
     }

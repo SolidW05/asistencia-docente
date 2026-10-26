@@ -21,12 +21,14 @@ La base nueva arranca sin docentes, campus, geocercas, clases ni asistencias. El
 ## Configuración inicial
 
 1. Definir los códigos administradores en `DEMO_ADMIN_CODES` antes de arrancar.
-2. Iniciar sesión manualmente con el código docente de siete dígitos que se utilizará. La identidad se guarda al iniciar sesión; no recibe clases ni campus automáticamente.
-3. Ingresar con un código administrador configurado. Crear campus, polígono principal, módulos y clases, asignándolas a los docentes que ya hayan iniciado sesión.
-4. Ingresar como docente, seleccionar una clase y solicitar ubicación. Registrar explícitamente o reportar una incidencia con justificación.
-5. Consultar historial y cadena. El bloque de índice 0 es el Génesis común; las asistencias empiezan en el índice 1.
+2. Ingresar con un código ADMIN configurado y crear campus, geocerca principal y módulos.
+3. En Jefes, dar de alta por código de siete dígitos. Si no existe, se crea la cuenta con rol JEFE; al iniciar sesión abrirá su administración.
+4. ADMIN o JEFE crea clases asignando un docente existente o un código; el código permite crear al docente automáticamente. Cada JEFE administra solo las clases que creó.
+5. El docente registra asistencia o reporta una incidencia justificada. En Mis asistencias ve su estado y sus cambios.
+6. En Asistencias, JEFE revisa pendientes de sus clases y ADMIN consulta todos. Confirmar requiere comentario y agrega un nuevo bloque.
+7. Solo ADMIN abre Cadena para consultar todos los bloques y verificarla. El índice 0 es el génesis; los registros y revisiones empiezan desde el índice 1.
 
-El perfil `demo` acepta códigos de siete dígitos y no valida la contraseña. Los nombres son etiquetas locales como `Docente <código>` y `Administrador <código>`. Los códigos configurados no son cuentas precargadas. Otro perfil sin proveedor real configurado falla explícitamente.
+El perfil `demo` acepta códigos de siete dígitos y no valida la contraseña. Los nombres son etiquetas locales como `Docente <código>` y `Administrador <código>`. Los códigos configurados no son cuentas precargadas. El rol JEFE se asigna en la base y se conserva al entrar. Otro perfil sin proveedor real configurado falla explícitamente.
 
 ## Persistencia y reinicio
 
@@ -43,7 +45,7 @@ docker compose down -v
 docker compose up --build -d
 ```
 
-Este último procedimiento elimina todos los datos del proyecto y crea una base vacía con su Génesis. El esquema consolidado sustituye las migraciones anteriores; no transforma ni importa bases antiguas.
+Este último procedimiento elimina todos los datos del proyecto y crea una base vacía con su Génesis. La actualización de roles y eventos conserva la base existente y sus hashes. No es necesario eliminar el volumen para aplicarla.
 
 ## Desarrollo fuera de Docker
 
@@ -75,6 +77,6 @@ Vite hace proxy al backend local. La geolocalización funciona en localhost; par
 - `frontend/`: páginas React, mapa, formularios y cliente HTTP.
 - `docs/`: [arquitectura](docs/arquitectura.md), [backend](docs/backend.md), [frontend](docs/frontend.md), [base de datos](docs/base-de-datos.md), [geocercas](docs/geocercas.md), [cadena](docs/cadena-de-bloques.md), [API](docs/api.md), [contrato](docs/contrato.md) y [limitaciones](docs/limitaciones.md).
 
-No se incluyen suites automatizadas, scripts que generen registros sintéticos ni resultados de pruebas anteriores. Para compilar se puede ejecutar `.\mvnw.cmd package` dentro de `backend/` y `npm.cmd run build` dentro de `frontend/`.
+Se incluyen pruebas de roles, autorización y eventos en `backend/src/test/java`. Ejecutar `.\mvnw.cmd test` dentro de `backend/` y `npm.cmd run build` dentro de `frontend/`. Véase [el historial de cambios y validaciones](docs/cambios-roles-revision.md) para la evidencia y las limitaciones.
 
 La cadena es centralizada: los hashes permiten comprobar consistencia interna, pero no demuestran presencia física ni impiden que quien controle toda la base reescriba la evidencia.

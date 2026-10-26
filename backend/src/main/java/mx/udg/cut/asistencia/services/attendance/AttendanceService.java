@@ -1,6 +1,9 @@
 package mx.udg.cut.asistencia.services.attendance;
 
 import mx.udg.cut.asistencia.config.AppPolicy;
+import mx.udg.cut.asistencia.dto.attendance.AdminAttendanceView;
+import mx.udg.cut.asistencia.dto.attendance.AttendanceHistoryView;
+import mx.udg.cut.asistencia.dto.attendance.AttendanceReviewRequest;
 import mx.udg.cut.asistencia.dto.attendance.AttendanceView;
 import mx.udg.cut.asistencia.dto.attendance.CheckInput;
 import mx.udg.cut.asistencia.dto.attendance.CheckResponse;
@@ -18,6 +21,7 @@ import mx.udg.cut.asistencia.models.geofence.GeofenceType;
 import mx.udg.cut.asistencia.models.schedule.ClassOccurrence;
 import mx.udg.cut.asistencia.models.schedule.ClassSchedule;
 import mx.udg.cut.asistencia.models.schedule.TeachingClass;
+import mx.udg.cut.asistencia.models.teacher.Role;
 import mx.udg.cut.asistencia.models.teacher.Teacher;
 import mx.udg.cut.asistencia.repositories.attendance.AttendanceRepository;
 import mx.udg.cut.asistencia.repositories.campus.CampusRepository;
@@ -27,6 +31,8 @@ import mx.udg.cut.asistencia.repositories.schedule.ClassScheduleRepository;
 import mx.udg.cut.asistencia.repositories.schedule.TeachingClassRepository;
 import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import mx.udg.cut.asistencia.services.chain.ChainAppendService;
+import mx.udg.cut.asistencia.services.chain.ChainService;
+import mx.udg.cut.asistencia.services.schedule.ClassScopeService;
 import mx.udg.cut.asistencia.services.geofence.GeofenceService;
 import mx.udg.cut.asistencia.utils.CanonicalJson;
 
@@ -41,6 +47,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
@@ -60,6 +67,8 @@ public class AttendanceService {
     private final AppPolicy policy;
     private final Clock clock;
     private final ChainAppendService chain;
+    private final ChainService chainService;
+    private final ClassScopeService classScope;
 
     public AttendanceService(
             AttendanceRepository attendances,
@@ -74,7 +83,9 @@ public class AttendanceService {
             CanonicalJson json,
             AppPolicy policy,
             Clock clock,
-            ChainAppendService chain) {
+            ChainAppendService chain,
+            ChainService chainService,
+            ClassScopeService classScope) {
         this.attendances = attendances;
         this.occurrences = occurrences;
         this.classes = classes;
@@ -88,6 +99,8 @@ public class AttendanceService {
         this.policy = policy;
         this.clock = clock;
         this.chain = chain;
+        this.chainService = chainService;
+        this.classScope = classScope;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -197,6 +210,151 @@ public class AttendanceService {
                                                 "REQUEST_NOT_FOUND",
                                                 "No se encontró un registro para esa clave."));
         return view(record);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminAttendanceView> adminHistory(UUID actorId) {
+        Teacher actor =
+                teachers.findById(actorId)
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "TEACHER_NOT_FOUND",
+                                                "No se encontró la identidad de la sesión."));
+        List<AttendanceRecord> records =
+                switch (actor.getRole()) {
+                    case ADMIN -> attendances.findAllByOrderByReceivedAtDesc();
+                    case JEFE ->
+                            attendances.findByClassCreatorOrderByReceivedAtDesc(actorId);
+                    default ->
+                            throw ApiException.forbidden(
+                                    "ATTENDANCE_REVIEW_FORBIDDEN",
+                                    "No tienes permiso para revisar asistencias.");
+                };
+        return records.stream().map(this::adminView).toList();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttendanceView review(
+            Authentication authentication,
+            UUID actorId,
+            UUID attendanceId,
+            AttendanceReviewRequest request) {
+        if (request.status() != AttendanceStatus.CONFIRMED)
+            throw ApiException.badRequest(
+                    "INVALID_REVIEW_STATUS", "La revisión solo puede confirmar una asistencia.");
+        String comment = request.comment() == null ? "" : request.comment().trim();
+        if (comment.isBlank())
+            throw ApiException.badRequest(
+                    "REVIEW_COMMENT_REQUIRED", "Escribe un comentario para confirmar la asistencia.");
+
+        UUID ownerId =
+                attendances
+                        .findTeacherIdById(attendanceId)
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "ATTENDANCE_NOT_FOUND",
+                                                "No se encontró la asistencia solicitada."));
+        Teacher owner =
+                teachers.lockById(ownerId)
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "TEACHER_NOT_FOUND",
+                                                "No se encontró el docente de esta asistencia."));
+        AttendanceRecord record =
+                attendances.findById(attendanceId)
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "ATTENDANCE_NOT_FOUND",
+                                                "No se encontró la asistencia solicitada."));
+        ClassOccurrence occurrence =
+                occurrences.findById(record.getOccurrenceId())
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "ATTENDANCE_NOT_FOUND",
+                                                "No se encontró la clase de esta asistencia."));
+        if (!classScope.canAccess(authentication, occurrence.getClassId()))
+            throw ApiException.notFound(
+                    "ATTENDANCE_NOT_FOUND", "No se encontró la asistencia solicitada.");
+
+        Teacher reviewer =
+                teachers.findById(actorId)
+                        .orElseThrow(
+                                () ->
+                                        ApiException.notFound(
+                                                "TEACHER_NOT_FOUND",
+                                                "No se encontró la identidad de la sesión."));
+        if (reviewer.getRole() != Role.ADMIN && reviewer.getRole() != Role.JEFE)
+            throw ApiException.forbidden(
+                    "ATTENDANCE_REVIEW_FORBIDDEN", "No tienes permiso para revisar asistencias.");
+
+        if (record.getStatus() != AttendanceStatus.PENDING_REVIEW)
+            return view(record);
+
+        AttendanceStatus previousStatus = record.getStatus();
+        if (!record.confirmFromReview())
+            return view(record);
+
+        attendances.saveAndFlush(record);
+        Instant changedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        Map<String, Object> event = new TreeMap<>();
+        event.put("actorId", reviewer.getId());
+        event.put("attendanceId", record.getId());
+        event.put("changedAt", changedAt);
+        event.put("occurrenceId", record.getOccurrenceId());
+        event.put("actorRole", reviewer.getRole().name());
+        event.put("previousStatus", previousStatus.name());
+        event.put("reason", comment);
+        event.put("reviewerName", reviewer.getName());
+        event.put("status", record.getStatus().name());
+        event.put("teacherId", owner.getId());
+        chain.appendStatusChanged(
+                owner.getId(), record.getId(), changedAt, json.write(event));
+        return view(record);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendanceHistoryView> history(UUID teacherId, UUID attendanceId) {
+        attendances
+                .findByIdAndTeacherId(attendanceId, teacherId)
+                .orElseThrow(
+                        () ->
+                                ApiException.notFound(
+                                        "ATTENDANCE_NOT_FOUND",
+                                        "No se encontró una asistencia propia con ese identificador."));
+        return chainService.history(attendanceId);
+    }
+
+    private AdminAttendanceView adminView(AttendanceRecord record) {
+        JsonNode payload = json.read(record.getChainPayload());
+        JsonNode location = record.getLocation() == null ? null : json.read(record.getLocation());
+        String className = payload.path("className").asText("Clase no disponible");
+        String teacherName = payload.path("teacherName").asText("Docente no disponible");
+        String teacherCode = payload.path("teacherCode").asText("");
+        UUID classId = nullableUuid(payload.path("classId").asText(null));
+        return new AdminAttendanceView(
+                record.getId(),
+                record.getTeacherId(),
+                teacherName,
+                teacherCode,
+                classId,
+                className,
+                record.getOccurrenceId(),
+                record.getReceivedAt(),
+                record.getStatus(),
+                record.getSpatialResult(),
+                record.getTemporalResult(),
+                record.getReason(),
+                record.getJustification(),
+                location);
+    }
+
+    private UUID nullableUuid(String value) {
+        return value == null || value.isBlank() ? null : UUID.fromString(value);
     }
 
     private Evaluation evaluate(UUID teacherId, CheckInput input, Instant now) {

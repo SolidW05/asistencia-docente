@@ -11,10 +11,10 @@ import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.time.Instant;
 
 @Entity
 @Table(name = "teaching_classes")
@@ -30,6 +30,9 @@ public class TeachingClass {
 
     @Column(name = "campus_id", nullable = false)
     private UUID campusId;
+
+    @Column(name = "created_by")
+    private UUID createdBy;
 
     @Column(nullable = false)
     private boolean active;
@@ -58,12 +61,24 @@ public class TeachingClass {
             UUID campusId,
             boolean active,
             Set<Geofence> modules) {
+        this(id, name, teacherId, campusId, active, modules, null);
+    }
+
+    public TeachingClass(
+            UUID id,
+            String name,
+            UUID teacherId,
+            UUID campusId,
+            boolean active,
+            Set<Geofence> modules,
+            UUID createdBy) {
         this.id = id;
         this.name = name;
         this.teacherId = teacherId;
         this.campusId = campusId;
         this.active = active;
         this.allowedModules = modules;
+        this.createdBy = createdBy;
     }
 
     public UUID getId() {
@@ -80,6 +95,10 @@ public class TeachingClass {
 
     public UUID getCampusId() {
         return campusId;
+    }
+
+    public UUID getCreatedBy() {
+        return createdBy;
     }
 
     public boolean isActive() {

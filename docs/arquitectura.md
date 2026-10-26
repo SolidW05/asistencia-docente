@@ -23,3 +23,9 @@ Antes de validar las entidades con Hibernate, `DatabaseInitializationConfig` coo
 La asistencia, su bloque y la cabecera global se guardan en una única transacción. Un bloqueo de fila por docente protege idempotencia y duplicados; después, el bloqueo de la única cabecera global serializa el encadenamiento entre todos los docentes, incluso con varias instancias Java. La restricción docente/ocurrencia y la clave de idempotencia previenen duplicados. La geometría y configuración usadas se conservan en la evidencia para que una edición posterior no reinterprete el historial.
 
 Las decisiones técnicas reversibles se fijan en el código y la documentación: sesión HTTP con cookies, CSRF, GeoJSON Polygon WGS84, horarios en America/Mexico_City y eventos centralizados con SHA-256. La ventana y los criterios de calidad son valores de demostración configurables; no representan reglas administrativas de UdeG.
+
+## Jerarquía y eventos
+
+ADMIN da de alta jefes y consulta todas las asistencias. JEFE crea clases y revisa las asistencias de las clases creadas por él. TEACHER conserva sus registros y consulta sus cambios. El alcance se decide mediante el rol guardado y el creador de la clase.
+
+La revisión confirma un pendiente con comentario y agrega un evento sin cambiar el bloque original. Solo ADMIN inspecciona y verifica la cadena completa. El docente recibe un historial sin hashes ni payloads. El inicializador actualiza el esquema antes de Hibernate, conserva los datos y no requiere recrear el volumen.

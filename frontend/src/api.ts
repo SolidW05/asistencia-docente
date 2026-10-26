@@ -1,6 +1,8 @@
 import type {
   ApiErrorBody,
   AppConfig,
+  AdminAttendanceRecord,
+  AttendanceHistoryEntry,
   AttendanceCheck,
   AttendancePayload,
   AttendanceRecord,
@@ -98,6 +100,10 @@ export const api = {
     }),
   attendanceByKey: (key: string) => request<AttendanceRecord>(`/attendance/requests/${encodeURIComponent(key)}`),
   attendance: () => request<AttendanceRecord[]>('/attendance'),
+  attendanceHistory: (id: string) => request<AttendanceHistoryEntry[]>(`/attendance/${id}/history`),
+  adminAttendance: () => request<AdminAttendanceRecord[]>('/admin/attendance'),
+  reviewAttendance: (id: string, comment: string) => request<AttendanceRecord>(`/admin/attendance/${id}/review`, { method: 'POST', body: JSON.stringify({ status: 'CONFIRMED', comment }) }),
+  createHead: (code: string) => request<TeacherOption>('/admin/teachers', { method: 'POST', body: JSON.stringify({ code }) }),
   chain: () => request<Chain>('/chain'),
   verifyChain: () => request<ChainVerification>('/chain/verify'),
   adminTeachers: () => request<TeacherOption[]>('/admin/teachers'),
@@ -110,7 +116,7 @@ export const api = {
     request<Geofence>(id ? `/admin/geofences/${id}` : '/admin/geofences', {
       method: id ? 'PUT' : 'POST', body: JSON.stringify(body),
     }),
-  saveClass: (id: string | null, body: Omit<ClassAssignment, 'id' | 'version' | 'occurrence'> & { version?: number }) =>
+  saveClass: (id: string | null, body: Omit<ClassAssignment, 'id' | 'version' | 'occurrence' | 'teacherId'> & { teacherId?: string; teacherCode?: string; version?: number }) =>
     request<ClassAssignment>(id ? `/admin/classes/${id}` : '/admin/classes', {
       method: id ? 'PUT' : 'POST', body: JSON.stringify(body),
     }),

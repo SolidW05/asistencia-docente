@@ -1,5 +1,6 @@
 package mx.udg.cut.asistencia.controllers;
 
+import mx.udg.cut.asistencia.dto.attendance.AttendanceHistoryView;
 import mx.udg.cut.asistencia.dto.attendance.AttendanceView;
 import mx.udg.cut.asistencia.dto.attendance.CheckInput;
 import mx.udg.cut.asistencia.dto.attendance.CheckRequest;
@@ -68,6 +69,12 @@ public class AttendanceController {
         return service.history(identity.id());
     }
 
+    @GetMapping("/attendance/{attendanceId}/history")
+    public List<AttendanceHistoryView> history(
+            @AuthenticationPrincipal DemoIdentity identity,
+            @PathVariable UUID attendanceId) {
+        return service.history(identity.id(), attendanceId);
+    }
     @GetMapping("/attendance/requests/{key}")
     public AttendanceView request(
             @AuthenticationPrincipal

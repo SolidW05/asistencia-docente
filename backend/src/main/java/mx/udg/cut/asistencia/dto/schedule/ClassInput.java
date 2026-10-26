@@ -6,6 +6,7 @@ import java.util.UUID;
 public record ClassInput(
         String name,
         UUID teacherId,
+        String teacherCode,
         UUID campusId,
         List<UUID> allowedModuleIds,
         int dayOfWeek,

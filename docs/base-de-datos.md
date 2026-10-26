@@ -16,7 +16,7 @@ erDiagram
   CLASS_OCCURRENCES ||--o| ATTENDANCES : registro
   TEACHERS ||--o{ ATTENDANCES : propia
   TEACHERS o|--o{ GLOBAL_CHAIN_BLOCKS : propietario
-  ATTENDANCES o|--|| GLOBAL_CHAIN_BLOCKS : evidencia
+  ATTENDANCES o|--|{ GLOBAL_CHAIN_BLOCKS : movimientos
   GLOBAL_CHAIN_HEAD ||--|{ GLOBAL_CHAIN_BLOCKS : secuencia
   GEOFENCES ||--o{ GEOFENCE_VERSIONS : versiones
 ```
@@ -25,10 +25,16 @@ erDiagram
 
 Una clase tiene horario semanal y varios módulos permitidos mediante una tabla de unión. Una ocurrencia representa una fecha concreta y guarda inicio/fin como `timestamptz`. Una asistencia referencia esa ocurrencia y almacena recepción, clasificación temporal/espacial, justificación, ubicación nullable, configuración y payload de cadena.
 
-Las restricciones únicas impiden repetir una asistencia para el mismo docente/ocurrencia y reutilizar una clave de idempotencia en ese docente. `global_chain_blocks` tiene índice global único y asistencia única. El bloque 0 es el único génesis, sin docente/asistencia/fecha; los demás requieren esos campos. `global_chain_head` contiene una sola fila de id 1 con último índice/hash y total de bloques (último índice + 1). Los índices GiST aceleran operaciones espaciales; índices por docente y fecha facilitan historial.
+Las restricciones únicas impiden repetir una asistencia para el mismo docente/ocurrencia y reutilizar una clave de idempotencia en ese docente. `global_chain_blocks` tiene índice global único y admite varios movimientos por asistencia. El bloque 0 es el único génesis, sin docente/asistencia/fecha; los demás requieren esos campos. `global_chain_head` contiene una sola fila de id 1 con último índice/hash y total de bloques (último índice + 1). Los índices GiST aceleran operaciones espaciales; índices por docente y fecha facilitan historial.
 
 La escritura bloquea el docente antes de comprobar duplicados y después la cabecera global antes de agregar un bloque. Esto serializa también registros de docentes distintos. El commit persiste asistencia, bloque y cabecera juntos; un error revierte los tres. No borrar o editar bloques con herramientas de administración del prototipo.
 
-Una base nueva contiene únicamente el Génesis global y la cabecera. Docentes, campus, geocercas, clases y asistencias permanecen vacíos hasta las acciones explícitas del usuario. No se conservan tablas de cadenas antiguas ni se importan datos anteriores. Este inicializador no actualiza esquemas existentes: si se cambia la estructura, hay que definir expresamente cómo aplicarla; para este reinicio se recrea la base local. Véase [la cadena y su génesis](cadena-de-bloques.md).
+Una base nueva contiene únicamente el Génesis global y la cabecera. Docentes, campus, geocercas, clases y asistencias permanecen vacíos hasta las acciones explícitas del usuario. No se conservan tablas de cadenas antiguas ni se importan datos anteriores. El inicializador ahora aplica una actualización compatible bajo bloqueo transaccional: amplía roles y tipos de evento, agrega created_by a clases y permite varios bloques por asistencia. Conserva registros, hashes y cabecera. Véase [la cadena y su génesis](cadena-de-bloques.md).
 
 Compose crea el volumen `metodologia-geocercas_postgres_data`. `docker compose restart` y `docker compose down` conservan sus datos. Un reinicio deliberado con `docker compose down -v` elimina el volumen del proyecto; el siguiente arranque crea el esquema y un único Génesis. No hay scripts de carga de pruebas ni resultados sintéticos guardados.
+
+## Revisión administrativa
+
+teachers admite TEACHER, JEFE y ADMIN. teaching_classes conserva el creador separado del docente asignado; ese creador determina el alcance de JEFE. Los eventos se guardan en global_chain_blocks y el estado actual en attendances; el payload inicial permanece intacto.
+
+La actualización elimina la unicidad por attendance_id de bloques y amplía el CHECK para ATTENDANCE_STATUS_CHANGED. Mantiene la unicidad de asistencia por docente/ocurrencia. Estado, bloque y cabecera se guardan en una sola transacción. Las clases heredadas sin creador quedan bajo ADMIN.

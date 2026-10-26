@@ -1,7 +1,8 @@
 package mx.udg.cut.asistencia.services.chain;
 
+import mx.udg.cut.asistencia.models.attendance.AttendanceStatus;
 import mx.udg.cut.asistencia.models.chain.ChainDefinition;
-
+import mx.udg.cut.asistencia.dto.attendance.AttendanceHistoryView;
 import mx.udg.cut.asistencia.dto.chain.BlockView;
 import mx.udg.cut.asistencia.dto.chain.ChainView;
 import mx.udg.cut.asistencia.dto.chain.VerifyView;
@@ -11,7 +12,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,7 +35,7 @@ public class ChainService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ChainView chain(UUID teacherId) {
         GlobalHead head = readHead();
-        List<BlockView> visible = readVisible(teacherId).stream().map(this::view).toList();
+        List<BlockView> visible = readAll().stream().map(this::view).toList();
         if (head == null)
             return new ChainView(
                     ChainDefinition.CHAIN_ID,
@@ -54,12 +57,48 @@ public class ChainService {
                 visible);
     }
 
-    /** Verifica la cadena global completa, pero nunca devuelve el payload de otro docente. */
+    @Transactional(readOnly = true)
+    public List<AttendanceHistoryView> history(UUID attendanceId) {
+        return jdbc.query(
+                """
+                select id,event_type,server_at,payload
+                from global_chain_blocks
+                where attendance_id=?
+                  and event_type in ('ATTENDANCE_RECORDED','ATTENDANCE_STATUS_CHANGED')
+                order by block_index
+                """,
+                (rs, row) -> {
+                    UUID id = rs.getObject("id", UUID.class);
+                    Instant changedAt = rs.getTimestamp("server_at").toInstant();
+                    JsonNode payload = json.read(rs.getString("payload"));
+                    String eventType = rs.getString("event_type");
+                    if ("ATTENDANCE_RECORDED".equals(eventType))
+                        return new AttendanceHistoryView(
+                                id,
+                                null,
+                                AttendanceStatus.valueOf(payload.path("status").asText()),
+                                changedAt,
+                                null,
+                                null);
+                    return new AttendanceHistoryView(
+                            id,
+                            AttendanceStatus.valueOf(payload.path("previousStatus").asText()),
+                            AttendanceStatus.valueOf(payload.path("status").asText()),
+                            changedAt,
+                            nullableText(payload.get("reviewerName")),
+                            nullableText(payload.get("reason")));
+                },
+                attendanceId);
+    }
+
+    /** Verifica la cadena global y el estado final de cada asistencia. */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VerifyView verify(UUID requestingTeacherId) {
         List<BlockRaw> blocks = readAll();
         String error = null;
         int checked = 0;
+        Map<UUID, String> latestStatus = new HashMap<>();
+        Map<UUID, LinkedRecord> linkedRecords = new HashMap<>();
         if (blocks.isEmpty())
             error = "Falta el bloque génesis de la cadena global.";
         if (error == null) {
@@ -94,7 +133,9 @@ public class ChainService {
                     error = "Versión de formato no soportada en el bloque " + block.index() + ".";
                     break;
                 }
-                if (!"ATTENDANCE_RECORDED".equals(block.eventType())) {
+                boolean attendanceRecorded = "ATTENDANCE_RECORDED".equals(block.eventType());
+                boolean statusChanged = "ATTENDANCE_STATUS_CHANGED".equals(block.eventType());
+                if (!attendanceRecorded && !statusChanged) {
                     error = "Tipo de evento alterado en el bloque " + block.index() + ".";
                     break;
                 }
@@ -135,37 +176,147 @@ public class ChainService {
                                     + " pertenece a otro docente.";
                     break;
                 }
-                if (!block.serverAt().equals(record.receivedAt())) {
-                    error =
-                            "La fecha del bloque "
-                                    + block.index()
-                                    + " no coincide con la recepción del registro.";
-                    break;
-                }
-                if (!block.payload().equals(record.chainPayload())) {
-                    error =
-                            "El payload del bloque "
-                                    + block.index()
-                                    + " no coincide con el snapshot del registro.";
-                    break;
-                }
-                String rowMismatch = attendanceMismatch(block.payload(), record);
-                if (rowMismatch != null) {
-                    error =
-                            "Los datos de asistencia asociados al bloque "
-                                    + block.index()
-                                    + " fueron alterados: "
-                                    + rowMismatch
-                                    + ".";
-                    break;
-                }
-                String configMismatch = configurationVersionsExist(block.payload());
-                if (configMismatch != null) {
-                    error =
-                            "Falta o fue alterada una versión de geocerca referida por el bloque "
-                                    + block.index()
-                                    + ".";
-                    break;
+                linkedRecords.putIfAbsent(block.attendanceId(), record);
+                JsonNode payload = json.read(block.payload());
+                if (attendanceRecorded) {
+                    if (latestStatus.containsKey(block.attendanceId())) {
+                        error =
+                                "La asistencia del bloque "
+                                        + block.index()
+                                        + " tiene más de un evento de registro.";
+                        break;
+                    }
+                    if (!block.serverAt().equals(record.receivedAt())) {
+                        error =
+                                "La fecha del bloque "
+                                        + block.index()
+                                        + " no coincide con la recepción del registro.";
+                        break;
+                    }
+                    if (!block.payload().equals(record.chainPayload())) {
+                        error =
+                                "El payload del bloque "
+                                        + block.index()
+                                        + " no coincide con el snapshot inicial del registro.";
+                        break;
+                    }
+                    String initialStatus = payload.path("status").asText();
+                    if (!isAttendanceStatus(initialStatus)) {
+                        error = "El estado inicial de la asistencia del bloque " + block.index() + " no es válido.";
+                        break;
+                    }
+                    String rowMismatch = attendanceMismatch(block.payload(), record);
+                    if (rowMismatch != null) {
+                        error =
+                                "Los datos de asistencia asociados al bloque "
+                                        + block.index()
+                                        + " fueron alterados: "
+                                        + rowMismatch
+                                        + ".";
+                        break;
+                    }
+                    String configMismatch = configurationVersionsExist(block.payload());
+                    if (configMismatch != null) {
+                        error =
+                                "Falta o fue alterada una versión de geocerca referida por el bloque "
+                                        + block.index()
+                                        + ".";
+                        break;
+                    }
+                    latestStatus.put(block.attendanceId(), initialStatus);
+                } else {
+                    String currentStatus = latestStatus.get(block.attendanceId());
+                    String previousStatus = payload.path("previousStatus").asText();
+                    String nextStatus = payload.path("status").asText();
+                    String actorId = payload.path("actorId").asText();
+                    String actorRole = payload.path("actorRole").asText();
+                    String reviewerName = payload.path("reviewerName").asText();
+                    String reason = payload.path("reason").asText();
+                    if (!block.attendanceId().toString().equals(payload.path("attendanceId").asText())
+                            || !block.teacherId().toString().equals(payload.path("teacherId").asText())
+                            || !record.occurrenceId().toString().equals(payload.path("occurrenceId").asText())) {
+                        error =
+                                "Las identidades del evento del bloque "
+                                        + block.index()
+                                        + " no coinciden con la asistencia asociada.";
+                        break;
+                    }
+                    Instant payloadChangedAt;
+                    try {
+                        payloadChangedAt = Instant.parse(payload.path("changedAt").asText());
+                    } catch (RuntimeException ex) {
+                        error = "La fecha del cambio de estado del bloque " + block.index() + " no es válida.";
+                        break;
+                    }
+                    if (!payloadChangedAt.equals(block.serverAt())
+                            || payloadChangedAt.isBefore(record.receivedAt())) {
+                        error =
+                                "La fecha del cambio de estado del bloque "
+                                        + block.index()
+                                        + " no coincide con su fecha de servidor o antecede al registro.";
+                        break;
+                    }
+                    if (currentStatus == null) {
+                        error =
+                                "El cambio de estado del bloque "
+                                        + block.index()
+                                        + " no tiene un registro inicial anterior.";
+                        break;
+                    }
+                    if (!currentStatus.equals(previousStatus)
+                            || !AttendanceStatus.PENDING_REVIEW.name().equals(previousStatus)
+                            || !AttendanceStatus.CONFIRMED.name().equals(nextStatus)) {
+                        error =
+                                "La transición de estado del bloque "
+                                        + block.index()
+                                        + " no coincide con el historial de la asistencia.";
+                        break;
+                    }
+                    UUID reviewerId;
+                    try {
+                        reviewerId = UUID.fromString(actorId);
+                    } catch (IllegalArgumentException ex) {
+                        error = "El actor del bloque " + block.index() + " no es válido.";
+                        break;
+                    }
+                    Long reviewerCount =
+                            jdbc.queryForObject(
+                                    "select count(*) from teachers where id=?", Long.class, reviewerId);
+                    if (reviewerCount == null || reviewerCount != 1L) {
+                        error = "El actor del bloque " + block.index() + " no existe.";
+                        break;
+                    }
+                    if (!"ADMIN".equals(actorRole) && !"JEFE".equals(actorRole)) {
+                        error = "El rol del actor del bloque " + block.index() + " no es válido.";
+                        break;
+                    }
+                    if ("JEFE".equals(actorRole)) {
+                        List<UUID> creators =
+                                jdbc.query(
+                                        """
+                                        select c.created_by
+                                        from class_occurrences o
+                                        join teaching_classes c on c.id = o.class_id
+                                        where o.id = ?
+                                        """,
+                                        (rs, row) -> rs.getObject("created_by", UUID.class),
+                                        record.occurrenceId());
+                        if (creators.isEmpty() || !reviewerId.equals(creators.getFirst())) {
+                            error =
+                                    "El actor JEFE del bloque "
+                                            + block.index()
+                                            + " no creó la clase asociada.";
+                            break;
+                        }
+                    }
+                    if (reviewerName.isBlank() || reason.isBlank()) {
+                        error =
+                                "Falta el nombre del revisor o comentario en el bloque "
+                                        + block.index()
+                                        + ".";
+                        break;
+                    }
+                    latestStatus.put(block.attendanceId(), nextStatus);
                 }
                 expectedPrevious = block.hash();
                 expectedIndex++;
@@ -179,8 +330,20 @@ public class ChainService {
         if (error == null) {
             long attendanceCount =
                     jdbc.queryForObject("select count(*) from attendances", Long.class);
-            if (attendanceCount != blocks.size() - 1L)
-                error = "La cantidad de asistencias no coincide con los bloques globales.";
+            if (attendanceCount != latestStatus.size())
+                error = "La cantidad de asistencias no coincide con los eventos iniciales de la cadena.";
+        }
+        if (error == null) {
+            for (Map.Entry<UUID, String> entry : latestStatus.entrySet()) {
+                LinkedRecord record = linkedRecords.get(entry.getKey());
+                if (record == null || !entry.getValue().equals(record.status())) {
+                    error =
+                            "El estado actual de la asistencia "
+                                    + entry.getKey()
+                                    + " no coincide con sus eventos de la cadena.";
+                    break;
+                }
+            }
         }
         if (error == null) {
             GlobalHead head = readHead();
@@ -229,16 +392,6 @@ public class ChainService {
                 from global_chain_blocks order by block_index
                 """,
                 (rs, row) -> mapBlock(rs));
-    }
-
-    private List<BlockRaw> readVisible(UUID teacherId) {
-        return jdbc.query(
-                """
-                select id,chain_id,block_index,event_type,teacher_id,attendance_id,server_at,payload,previous_hash,hash,format_version
-                from global_chain_blocks where block_index=0 or teacher_id=? order by block_index
-                """,
-                (rs, row) -> mapBlock(rs),
-                teacherId);
     }
 
     private BlockRaw mapBlock(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -322,8 +475,6 @@ public class ChainService {
             return "ocurrencia";
         if (!record.teacherId().toString().equals(p.path("teacherId").asText()))
             return "docente";
-        if (!record.status().equals(p.path("status").asText()))
-            return "estado";
         if (!record.spatialResult().equals(p.path("spatialResult").asText()))
             return "resultado espacial";
         if (!record.temporalResult().equals(p.path("temporalResult").asText()))
@@ -348,6 +499,11 @@ public class ChainService {
         if (!json.write(rowConfiguration).equals(json.write(p.get("configuration"))))
             return "snapshot de configuración";
         return null;
+    }
+
+    private boolean isAttendanceStatus(String value) {
+        return AttendanceStatus.CONFIRMED.name().equals(value)
+                || AttendanceStatus.PENDING_REVIEW.name().equals(value);
     }
 
     private String configurationVersionsExist(String payload) {

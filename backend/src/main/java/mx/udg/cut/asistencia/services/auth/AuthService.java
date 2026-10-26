@@ -1,6 +1,7 @@
 package mx.udg.cut.asistencia.services.auth;
 
 import mx.udg.cut.asistencia.models.auth.DemoIdentity;
+import mx.udg.cut.asistencia.models.teacher.Role;
 import mx.udg.cut.asistencia.models.teacher.Teacher;
 import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import org.springframework.stereotype.Service;
@@ -20,19 +21,23 @@ public class AuthService {
     @Transactional
     public DemoIdentity login(String code) {
         DemoIdentity identity = identityProvider.authenticate(code);
-        teachers.findById(identity.id())
-                .ifPresentOrElse(
-                        existing -> {
-                            existing.setName(identity.name());
-                            existing.setRole(identity.role());
-                        },
-                        () ->
-                                teachers.save(
-                                        new Teacher(
-                                                identity.id(),
-                                                identity.code(),
-                                                identity.name(),
-                                                identity.role())));
-        return identity;
+        Teacher teacher =
+                teachers.lockByCode(identity.code())
+                        .orElseGet(
+                                () ->
+                                        teachers.findById(identity.id())
+                                                .orElseGet(
+                                                        () ->
+                                                                new Teacher(
+                                                                        identity.id(),
+                                                                        identity.code(),
+                                                                        identity.name(),
+                                                                        identity.role())));
+        teacher.setName(identity.name());
+        if (identity.role() == Role.ADMIN || teacher.getRole() != Role.JEFE)
+            teacher.setRole(identity.role());
+        Teacher saved = teachers.save(teacher);
+        return new DemoIdentity(
+                saved.getId(), saved.getCode(), saved.getName(), saved.getRole());
     }
 }

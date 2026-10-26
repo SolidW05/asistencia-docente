@@ -5,6 +5,7 @@ import mx.udg.cut.asistencia.dto.chain.VerifyView;
 import mx.udg.cut.asistencia.models.auth.DemoIdentity;
 import mx.udg.cut.asistencia.services.chain.ChainService;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/chain")
+@PreAuthorize("@roleAccess.hasRole(authentication, 'ADMIN')")
 public class ChainController {
     private final ChainService chain;
 

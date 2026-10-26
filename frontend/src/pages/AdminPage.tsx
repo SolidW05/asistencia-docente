@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
-import type { Campus, ClassAssignment, Geofence, PolygonGeometry, TeacherOption } from '../types'
+import type { Identity, Campus, ClassAssignment, Geofence, PolygonGeometry, TeacherOption } from '../types'
 import { api, ApiError } from '../api'
 import { ErrorText, Notice } from '../components/Notice'
 import { Loading } from '../components/Loading'
@@ -9,15 +9,16 @@ import { MapView } from '../components/MapView'
 
 type CampusForm = { id: string | null; name: string; active: boolean }
 type FenceForm = { id: string | null; name: string; campusId: string; type: 'CAMPUS' | 'MODULE'; parentId: string; active: boolean; version?: number; geometry: PolygonGeometry | null }
-type ClassForm = { id: string | null; name: string; teacherId: string; campusId: string; allowedModuleIds: string[]; dayOfWeek: number; startTime: string; endTime: string; active: boolean; version?: number }
+type ClassForm = { id: string | null; name: string; teacherId: string; teacherCode: string; campusId: string; allowedModuleIds: string[]; dayOfWeek: number; startTime: string; endTime: string; active: boolean; version?: number }
 
 const EMPTY_CAMPUS: CampusForm = { id: null, name: '', active: true }
 const EMPTY_FENCE: FenceForm = { id: null, name: '', campusId: '', type: 'CAMPUS', parentId: '', active: true, geometry: null }
-const EMPTY_CLASS: ClassForm = { id: null, name: '', teacherId: '', campusId: '', allowedModuleIds: [], dayOfWeek: 1, startTime: '08:00', endTime: '09:00', active: true }
+const EMPTY_CLASS: ClassForm = { id: null, name: '', teacherId: '', teacherCode: '', campusId: '', allowedModuleIds: [], dayOfWeek: 1, startTime: '08:00', endTime: '09:00', active: true }
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-export function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'geofences' | 'classes'>('geofences')
+export function AdminPage({ identity }: { identity: Identity }) {
+  const isAdmin = identity.role === 'ADMIN'
+  const [activeTab, setActiveTab] = useState<'geofences' | 'classes'>(isAdmin ? 'geofences' : 'classes')
   const [campuses, setCampuses] = useState<Campus[]>([])
   const [fences, setFences] = useState<Geofence[]>([])
   const [classes, setClasses] = useState<ClassAssignment[]>([])
@@ -87,6 +88,7 @@ export function AdminPage() {
       id: selectedClass.id,
       name: selectedClass.name,
       teacherId: selectedClass.teacherId,
+      teacherCode: '',
       campusId: selectedClass.campusId,
       allowedModuleIds: selectedClass.allowedModuleIds,
       dayOfWeek: selectedClass.dayOfWeek,
@@ -155,7 +157,7 @@ export function AdminPage() {
     try {
       const saved = await api.saveClass(classForm.id, {
         name: classForm.name.trim(),
-        teacherId: classForm.teacherId,
+        ...(classForm.teacherCode.trim() ? { teacherCode: classForm.teacherCode.trim() } : { teacherId: classForm.teacherId }),
         campusId: classForm.campusId,
         allowedModuleIds: classForm.allowedModuleIds,
         dayOfWeek: classForm.dayOfWeek,
@@ -164,8 +166,7 @@ export function AdminPage() {
         active: classForm.active,
         ...(classForm.id && classForm.version !== undefined ? { version: classForm.version } : {}),
       })
-      const refreshed = await api.adminClasses()
-      setClasses(refreshed)
+      await reload()
       setSelectedClassId(saved.id)
       setNotice('Clase, horario y módulos permitidos guardados.')
     } catch (error) { setClassError(error instanceof Error ? error.message : 'No se pudo guardar la clase.') }
@@ -195,16 +196,16 @@ export function AdminPage() {
     <div className="admin-page">
       <div className="page-heading">
         <div><span className="eyebrow">Configuración del prototipo</span><h1>Administración</h1><p>Define las áreas del campus y relaciona clases con docentes, horarios y módulos.</p></div>
-        <span className="admin-badge"><span className="badge-dot" />Acceso administrador</span>
+        <span className="admin-badge"><span className="badge-dot" />{isAdmin ? 'Administrador' : 'Jefe'}</span>
       </div>
       {loadError && <Notice tone="error" title="No fue posible cargar la administración">{loadError}</Notice>}
       {notice && <Notice tone="success">{notice}</Notice>}
       <div className="admin-tabs" role="tablist" aria-label="Secciones administrativas">
-        <button className={activeTab === 'geofences' ? 'active' : ''} role="tab" aria-selected={activeTab === 'geofences'} onClick={() => setActiveTab('geofences')}><span>◈</span> Campus y geocercas</button>
+        {isAdmin && <button className={isAdmin && activeTab === 'geofences' ? 'active' : ''} role="tab" aria-selected={activeTab === 'geofences'} onClick={() => setActiveTab('geofences')}><span>◈</span> Campus y geocercas</button>}
         <button className={activeTab === 'classes' ? 'active' : ''} role="tab" aria-selected={activeTab === 'classes'} onClick={() => setActiveTab('classes')}><span>▦</span> Clases y horarios</button>
       </div>
 
-      {activeTab === 'geofences' ? <div className="admin-geofence-layout">
+      {isAdmin && activeTab === 'geofences' ? <div className="admin-geofence-layout">
         <div className="admin-form-column">
           <section className="panel admin-panel">
             <div className="panel-header"><div><span className="eyebrow">Nivel 1</span><h2>Campus</h2></div><span className="step-number">01</span></div>
@@ -264,7 +265,10 @@ export function AdminPage() {
             <label className="field-label" htmlFor="class-name">Nombre de la clase</label>
             <input id="class-name" value={classForm.name} onChange={(event) => setClassForm({ ...classForm, name: event.target.value })} maxLength={120} required />
             <label className="field-label" htmlFor="class-teacher">Docente</label>
-            <select id="class-teacher" value={classForm.teacherId} onChange={(event) => setClassForm({ ...classForm, teacherId: event.target.value })} required><option value="">Selecciona docente</option>{teachers.filter((teacher) => teacher.role === 'TEACHER').map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.code}</option>)}</select>
+            <select id="class-teacher" value={classForm.teacherId} onChange={(event) => setClassForm({ ...classForm, teacherId: event.target.value, teacherCode: '' })} required={!classForm.teacherCode}><option value="">Selecciona docente</option>{teachers.filter((teacher) => teacher.role === 'TEACHER').map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.code}</option>)}</select>
+            <label className="field-label" htmlFor="class-teacher-code">O asignar por código docente</label>
+            <input id="class-teacher-code" inputMode="numeric" pattern="[0-9]{7}" maxLength={7} value={classForm.teacherCode} onChange={(event) => setClassForm({ ...classForm, teacherCode: event.target.value, teacherId: '' })} placeholder="Siete dígitos" />
+            <small className="field-hint">Si aún no existe, su cuenta se crea al guardar la clase.</small>
             <label className="field-label" htmlFor="class-campus">Campus</label>
             <select id="class-campus" value={classForm.campusId} onChange={(event) => setClassForm({ ...classForm, campusId: event.target.value, allowedModuleIds: [] })} required><option value="">Selecciona campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select>
             <div className="field-grid field-grid-three">
@@ -278,7 +282,7 @@ export function AdminPage() {
             </div>
             <label className="check-row"><input type="checkbox" checked={classForm.active} onChange={(event) => setClassForm({ ...classForm, active: event.target.checked })} /> Clase activa</label>
             <ErrorText>{classError}</ErrorText>
-            <button className="button button-primary button-full" type="submit" disabled={savingClass || teachers.filter((teacher) => teacher.role === 'TEACHER').length === 0}>{savingClass ? 'Guardando…' : classForm.id ? 'Guardar cambios' : 'Crear clase'}</button>
+            <button className="button button-primary button-full" type="submit" disabled={savingClass}>{savingClass ? 'Guardando…' : classForm.id ? 'Guardar cambios' : 'Crear clase'}</button>
             {classForm.version !== undefined && <span className="field-hint">Versión {classForm.version} · actualizada con control de concurrencia.</span>}
           </form>
         </section>

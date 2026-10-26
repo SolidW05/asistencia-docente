@@ -5,7 +5,7 @@ CREATE TABLE teachers (
     id uuid PRIMARY KEY,
     code varchar(7) NOT NULL UNIQUE CHECK (code ~ '^[0-9]{7}$'),
     name varchar(160) NOT NULL,
-    role varchar(16) NOT NULL CHECK (role IN ('TEACHER', 'ADMIN'))
+    role varchar(16) NOT NULL CHECK (role IN ('TEACHER', 'JEFE', 'ADMIN'))
 );
 
 CREATE TABLE campuses (
@@ -83,6 +83,7 @@ CREATE TABLE teaching_classes (
     name varchar(120) NOT NULL,
     teacher_id uuid NOT NULL REFERENCES teachers (id),
     campus_id uuid NOT NULL REFERENCES campuses (id),
+    created_by uuid REFERENCES teachers (id),
     active boolean NOT NULL,
     version bigint NOT NULL DEFAULT 0,
     modified_at timestamptz
@@ -90,6 +91,9 @@ CREATE TABLE teaching_classes (
 
 CREATE INDEX teaching_classes_teacher_idx
     ON teaching_classes (teacher_id, active);
+
+CREATE INDEX teaching_classes_created_by_idx
+    ON teaching_classes (created_by, name);
 
 CREATE TABLE class_schedules (
     class_id uuid PRIMARY KEY REFERENCES teaching_classes (id),
@@ -148,7 +152,7 @@ CREATE TABLE global_chain_blocks (
     block_index bigint NOT NULL UNIQUE CHECK (block_index >= 0),
     event_type varchar(32) NOT NULL,
     teacher_id uuid REFERENCES teachers (id),
-    attendance_id uuid UNIQUE REFERENCES attendances (id),
+    attendance_id uuid REFERENCES attendances (id),
     server_at timestamptz,
     payload text NOT NULL,
     previous_hash varchar(64) NOT NULL CHECK (length(previous_hash) = 64),
@@ -165,7 +169,7 @@ CREATE TABLE global_chain_blocks (
         OR
         (
             block_index > 0
-            AND event_type = 'ATTENDANCE_RECORDED'
+            AND event_type IN ('ATTENDANCE_RECORDED', 'ATTENDANCE_STATUS_CHANGED')
             AND teacher_id IS NOT NULL
             AND attendance_id IS NOT NULL
             AND server_at IS NOT NULL

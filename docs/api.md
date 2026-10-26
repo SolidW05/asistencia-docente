@@ -1,51 +1,39 @@
 # API
 
-El contrato completo se encuentra en [contrato.md](contrato.md). Los endpoints se sirven bajo `/api`, con JSON y errores `{code,message}` en español. Swagger está en [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html); el esquema OpenAPI en `/v3/api-docs`. Requiere la sesión según la configuración de seguridad. La interfaz accede mediante el proxy Nginx `/api`, sin nombres internos de Docker en el navegador.
+El contrato completo está en [contrato.md](contrato.md). Las rutas usan `/api`, JSON y errores `{code,message}` en español. Swagger está en `http://localhost:8080/swagger-ui.html`; OpenAPI en `/v3/api-docs`.
 
-La identidad se toma de la sesión; las escrituras de asistencia no aceptan un código docente como autoridad. Consultar otra ocurrencia o clave de solicitud no permite acceder a datos de otro docente. Las rutas `/admin/**` exigen rol administrador en el backend.
+La identidad procede de la sesión. Las escrituras conservan CSRF. Las rutas administrativas distinguen ADMIN y JEFE: campus/geocercas y altas de jefes son exclusivas de ADMIN; clases y revisión admiten JEFE con alcance limitado al creador de la clase. ADMIN consulta todas las asistencias.
 
-`GET /api/chain` entrega la cabecera global, el génesis común y los bloques de asistencia propios. Los índices pueden tener saltos: todos los docentes comparten una secuencia, pero no los payloads de sus asistencias. `GET /api/chain/verify` comprueba la secuencia global completa en el servidor y devuelve solamente el resultado de integridad y el primer error, sin exponer identidades ajenas. El bloque 0 se deriva de `And they say chivalry is dead`; el primer registro de asistencia tiene índice 1.
+## Recorrido de administración
 
-Secuencia de autenticación y registro:
+1. Iniciar sesión con un código principal de `DEMO_ADMIN_CODES`.
+2. Renovar CSRF y crear campus y geocercas.
+3. POST `/api/admin/teachers` con `{"code":"1234567"}` para crear/promover un JEFE.
+4. Iniciar sesión como JEFE y crear clases en `/api/admin/classes`. Se puede asignar por `teacherId` o por `teacherCode`; en este último caso se crea el docente si falta.
+5. Consultar `/api/admin/attendance`. El servidor filtra las clases del JEFE; ADMIN obtiene todos los registros.
+6. POST `/api/admin/attendance/{id}/review` con `{"status":"CONFIRMED","comment":"Justificación revisada."}`.
 
-1. GET `/api/auth/csrf`, conservar cookie y `{token,headerName}`.
-2. POST `/api/auth/login` con el encabezado CSRF y `{code,password}`. El código es el elegido por el usuario, con siete dígitos; el rol administrador depende de `DEMO_ADMIN_CODES`. En el perfil local `demo`, la contraseña no se valida.
-3. Renovar CSRF tras el login; consultar `/api/auth/me`, `/api/classes` y `/api/geofences`.
+Una revisión confirma un pendiente y agrega un evento. Repetirla sobre una asistencia confirmada devuelve el registro actual sin otro bloque. La evidencia del registro original permanece guardada.
+
+## Recorrido docente
+
+1. GET `/api/auth/csrf`; conservar cookie y encabezado indicado.
+2. POST `/api/auth/login` con `{code,password}` y CSRF; renovar el token después.
+3. Consultar `/api/classes?date=YYYY-MM-DD` y `/api/geofences`.
 4. Seleccionar una ocurrencia y solicitar ubicación al navegador.
-5. POST `/api/attendance/check`; mostrar resultados y justificación requerida.
-6. POST `/api/attendance` con `Idempotency-Key` UUID y token CSRF.
-7. Ante incertidumbre de recepción, GET `/api/attendance/requests/{key}`. Si aún no existe, reintentar con la misma clave y el mismo cuerpo.
-8. Consultar `/api/attendance`, `/api/chain` y `/api/chain/verify`.
+5. POST `/api/attendance/check`; leer resultados y justificación requerida.
+6. POST `/api/attendance` con `Idempotency-Key` UUID y CSRF.
+7. Tras un resultado incierto, GET `/api/attendance/requests/{key}` y reutilizar la misma clave con el mismo cuerpo.
+8. Consultar `/api/attendance` y `/api/attendance/{id}/history` para ver estados y comentarios de revisión.
 
-Ejemplo de cuerpo de comprobación (sustituir el UUID y la fecha por valores reales recientes):
-
-```json
-{
-  "occurrenceId": "00000000-0000-0000-0000-000000000001",
-  "location": {
-    "latitude": 20.565,
-    "longitude": -103.21,
-    "accuracyMeters": 8,
-    "capturedAt": "2026-10-13T01:00:00Z"
-  },
-  "locationIssue": null
-}
-```
-
-Ejemplo de respuesta de un caso ordinario:
-
-```json
-{"spatialResult":"ALLOWED_MODULE","temporalResult":"IN_WINDOW","status":"CONFIRMED","requiresJustification":false,"message":"..."}
-```
-
-Una incidencia explícita puede enviarse sin coordenadas:
+Una incidencia sin coordenadas puede usar este cuerpo, reemplazando el UUID por una ocurrencia real:
 
 ```json
 {"occurrenceId":"00000000-0000-0000-0000-000000000001","location":null,"locationIssue":"PERMISSION_DENIED","reason":"Otro","justification":"No pude otorgar permiso de ubicación en el dispositivo."}
 ```
 
-No enviar justificación vacía en un caso pendiente. No asumir que un HTTP fallido significa que la transacción nunca llegó: consultar la clave. Un 409 indica un conflicto, como una asistencia ya registrada o una versión desactualizada.
+## Cadena y verificación
 
-Las escrituras administrativas envían polígonos GeoJSON y una versión al editar. Una clase configura docente, campus, módulos permitidos, día de la semana (1=lunes, 7=domingo), inicio/fin y estado. Los horarios del MVP no atraviesan medianoche; crear sesiones separadas si se necesita ese caso.
+GET `/api/chain` y GET `/api/chain/verify` son exclusivos de ADMIN. La primera entrega todos los bloques y sus datos; la segunda reconstruye y verifica toda la secuencia, incluidos los cambios de estado. Un docente recibe solo su registro e historial funcional.
 
-El tipo/campus/padre de una geocerca quedan fijos al crearla. Para cambiar su jerarquía, crear otra y desactivar la anterior conservando evidencia. El docente/campus de una clase no se reasignan si ya existen ocurrencias. Los cambios de horario actualizan ocurrencias actuales/futuras sin asistencia; las ya registradas preservan su horario histórico.
+El génesis tiene índice 0; el registro inicial usa ATTENDANCE_RECORDED y la revisión ATTENDANCE_STATUS_CHANGED. Consultar o repetir una operación ya aplicada no agrega bloques. Los errores 409 indican conflictos de idempotencia, duplicados o versión desactualizada, según la operación.

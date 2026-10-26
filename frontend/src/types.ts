@@ -1,4 +1,4 @@
-export type Role = 'TEACHER' | 'ADMIN'
+export type Role = 'TEACHER' | 'JEFE' | 'ADMIN'
 
 export interface Identity {
   id: string
@@ -149,4 +149,19 @@ export interface ChainVerification {
 export interface ApiErrorBody {
   code: string
   message: string
+}
+
+export interface AttendanceHistoryEntry {
+  id: string
+  previousStatus: AttendanceStatus | null
+  status: AttendanceStatus
+  changedAt: string
+  reviewerName: string | null
+  comment: string | null
+}
+
+export interface AdminAttendanceRecord extends AttendanceRecord {
+  teacherName: string
+  teacherCode: string
+  classId: string
 }

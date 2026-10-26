@@ -8,6 +8,9 @@ import { Loading } from './components/Loading'
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })))
 const TeacherPage = lazy(() => import('./pages/TeacherPage').then((module) => ({ default: module.TeacherPage })))
 const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })))
+const ReviewPage = lazy(() => import('./pages/ReviewPage').then((module) => ({ default: module.ReviewPage })))
+const HeadsPage = lazy(() => import('./pages/HeadsPage').then((module) => ({ default: module.HeadsPage })))
+const ChainPage = lazy(() => import('./pages/ChainPage').then((module) => ({ default: module.ChainPage })))
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((module) => ({ default: module.HistoryPage })))
 
 export function App() {
@@ -34,7 +37,7 @@ export function App() {
     const nextIdentity = await api.login(code, password)
     setIdentity(nextIdentity)
     setSessionError('')
-    navigate(nextIdentity.role === 'ADMIN' ? '/admin' : '/docente', { replace: true })
+    navigate(nextIdentity.role !== 'TEACHER' ? '/admin' : '/docente', { replace: true })
   }
 
   async function handleLogout(): Promise<void> {
@@ -50,11 +53,14 @@ export function App() {
   return (
     <Suspense fallback={<Loading label="Abriendo tu espacio…" />}>
     <Routes>
-      <Route path="/login" element={identity ? <Navigate to={identity.role === 'ADMIN' ? '/admin' : '/docente'} replace /> : <LoginPage onLogin={handleLogin} sessionError={sessionError} />} />
-      <Route path="/" element={<Navigate to={identity ? (identity.role === 'ADMIN' ? '/admin' : '/docente') : '/login'} replace />} />
+      <Route path="/login" element={identity ? <Navigate to={identity.role !== 'TEACHER' ? '/admin' : '/docente'} replace /> : <LoginPage onLogin={handleLogin} sessionError={sessionError} />} />
+      <Route path="/" element={<Navigate to={identity ? (identity.role !== 'TEACHER' ? '/admin' : '/docente') : '/login'} replace />} />
       <Route path="/docente" element={identity?.role === 'TEACHER' ? <AppShell identity={identity} onLogout={handleLogout}><TeacherPage identity={identity} /></AppShell> : <Navigate to={identity ? '/admin' : '/login'} replace />} />
       <Route path="/historial" element={identity?.role === 'TEACHER' ? <AppShell identity={identity} onLogout={handleLogout}><HistoryPage identity={identity} /></AppShell> : <Navigate to={identity ? '/admin' : '/login'} replace />} />
-      <Route path="/admin" element={identity?.role === 'ADMIN' ? <AppShell identity={identity} onLogout={handleLogout}><AdminPage /></AppShell> : <Navigate to={identity ? '/docente' : '/login'} replace />} />
+      <Route path="/admin" element={identity && identity.role !== 'TEACHER' ? <AppShell identity={identity} onLogout={handleLogout}><AdminPage identity={identity} /></AppShell> : <Navigate to={identity ? '/docente' : '/login'} replace />} />
+      <Route path="/revision" element={identity && identity.role !== 'TEACHER' ? <AppShell identity={identity} onLogout={handleLogout}><ReviewPage identity={identity} /></AppShell> : <Navigate to="/" replace />} />
+      <Route path="/jefes" element={identity?.role === 'ADMIN' ? <AppShell identity={identity} onLogout={handleLogout}><HeadsPage /></AppShell> : <Navigate to="/" replace />} />
+      <Route path="/cadena" element={identity?.role === 'ADMIN' ? <AppShell identity={identity} onLogout={handleLogout}><ChainPage /></AppShell> : <Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </Suspense>

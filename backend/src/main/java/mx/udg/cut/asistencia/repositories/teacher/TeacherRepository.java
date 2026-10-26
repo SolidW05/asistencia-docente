@@ -14,6 +14,10 @@ import org.springframework.data.repository.query.Param;
 public interface TeacherRepository extends JpaRepository<Teacher, UUID> {
     Optional<Teacher> findByCode(String code);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Teacher t where t.code = :code")
+    Optional<Teacher> lockByCode(@Param("code") String code);
+
     List<Teacher> findAllByOrderByCodeAsc();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

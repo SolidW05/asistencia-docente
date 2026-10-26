@@ -4,6 +4,7 @@ import mx.udg.cut.asistencia.dto.auth.IdentityResponse;
 import mx.udg.cut.asistencia.dto.auth.LoginRequest;
 import mx.udg.cut.asistencia.models.auth.DemoIdentity;
 import mx.udg.cut.asistencia.services.auth.AuthService;
+import mx.udg.cut.asistencia.services.auth.RoleAccessService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -29,14 +30,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService service;
+    private final RoleAccessService roleAccess;
     private final SecurityContextRepository contextRepository;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
 
     public AuthController(
             AuthService service,
+            RoleAccessService roleAccess,
             SecurityContextRepository contextRepository,
             SessionAuthenticationStrategy sessionAuthenticationStrategy) {
         this.service = service;
+        this.roleAccess = roleAccess;
         this.contextRepository = contextRepository;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
     }
@@ -65,13 +69,12 @@ public class AuthController {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         contextRepository.saveContext(context, servletRequest, response);
-        return new IdentityResponse(
-                identity.id(), identity.code(), identity.name(), identity.role());
+        return response(identity);
     }
 
     @GetMapping("/me")
     public IdentityResponse me(@AuthenticationPrincipal DemoIdentity identity) {
-        return response(identity);
+        return response(roleAccess.currentIdentity(identity));
     }
 
     @PostMapping("/logout")
@@ -83,7 +86,8 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    private IdentityResponse response(DemoIdentity i) {
-        return new IdentityResponse(i.id(), i.code(), i.name(), i.role());
+    private IdentityResponse response(DemoIdentity identity) {
+        return new IdentityResponse(
+                identity.id(), identity.code(), identity.name(), identity.role());
     }
 }
