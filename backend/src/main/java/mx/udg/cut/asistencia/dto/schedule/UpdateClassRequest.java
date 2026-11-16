@@ -7,6 +7,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
+/** Recibe los cambios de una clase y la versión esperada. */
 public record UpdateClassRequest(
         @NotNull
         @Size(min = 1, max = 120)

@@ -21,6 +21,7 @@ import java.util.List;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
+/** Configura autenticación por sesión, protección CSRF y respuestas de acceso denegado. */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
@@ -34,6 +35,7 @@ public class SecurityConfig {
         return new HttpSessionCsrfTokenRepository();
     }
 
+    /** Renueva identificador de sesión y token CSRF después de autenticar. */
     @Bean
     SessionAuthenticationStrategy sessionAuthenticationStrategy(
             CsrfTokenRepository csrfRepository) {
@@ -43,6 +45,7 @@ public class SecurityConfig {
                         new CsrfAuthenticationStrategy(csrfRepository)));
     }
 
+    /** Define rutas públicas, sesión autenticada, CSRF y códigos HTTP de seguridad. */
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,

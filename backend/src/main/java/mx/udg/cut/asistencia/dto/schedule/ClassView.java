@@ -3,6 +3,7 @@ package mx.udg.cut.asistencia.dto.schedule;
 import java.util.List;
 import java.util.UUID;
 
+/** Expone la asignación, horario y ocurrencia de una clase. */
 public record ClassView(
         UUID id,
         String name,

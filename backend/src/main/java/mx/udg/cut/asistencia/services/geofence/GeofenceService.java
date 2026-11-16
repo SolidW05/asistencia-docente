@@ -16,6 +16,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Valida y persiste polígonos de campus y módulos con versiones históricas.
+ * Usa JPA para entidades y bloqueos, y JDBC con PostGIS para operaciones espaciales.
+ * La jerarquía se comprueba antes de guardar y cada versión nueva queda en el historial.
+ * La evaluación de asistencia consulta cobertura y distancia a fronteras.
+ */
 @Service
 public class GeofenceService {
     private final GeofenceRepository geofences;
@@ -23,6 +29,10 @@ public class GeofenceService {
     private final JdbcTemplate jdbc;
     private final CanonicalJson json;
 
+    /**
+     * Recibe repositorios de campus y geocercas, JDBC y JSON canónico.
+     * JPA administra entidades y JDBC permite consultas PostGIS y snapshots.
+     */
     public GeofenceService(
             GeofenceRepository geofences,
             CampusRepository campuses,
@@ -34,11 +44,19 @@ public class GeofenceService {
         this.json = json;
     }
 
+    /**
+     * Consulta todas las geocercas ordenadas por nombre.
+     * No filtra por actividad ni convierte las entidades a DTO.
+     */
     @Transactional(readOnly = true)
     public List<Geofence> list() {
         return geofences.findAllByOrderByNameAsc();
     }
 
+    /**
+     * Bloquea el campus para coordinar cambios y valida jerarquía y polígono.
+     * Guarda la entidad con UUID nuevo y registra su versión inicial en la misma transacción.
+     */
     @Transactional
     public Geofence create(
             UUID campusId,
@@ -63,10 +81,17 @@ public class GeofenceService {
                                 parentId,
                                 json.write(geometry),
                                 active));
+        // Se guarda la versión recién persistida; el historial previo permanece en la tabla.
         snapshot(saved);
         return saved;
     }
 
+    /**
+     * Busca la geocerca y compara la versión enviada antes de modificarla.
+     * Bloquea el campus y prohíbe cambiar tipo, campus o padre.
+     * Valida geometría y comprueba que una nueva frontera de campus cubra sus módulos.
+     * Guarda la entidad y registra la nueva versión; las versiones previas permanecen.
+     */
     @Transactional
     public Geofence update(
             UUID id,
@@ -101,6 +126,7 @@ public class GeofenceService {
                     "GEOFENCE_HIERARCHY_IMMUTABLE",
                     "El tipo, campus y relación padre se definen al crear la geocerca.");
         validateBase(campusId, name, type, parentId, geometry, id);
+        // La nueva frontera no puede dejar fuera los módulos que ya dependen del campus.
         if (current.getType() == GeofenceType.CAMPUS) {
             long invalidChildren =
                     jdbc.queryForObject(
@@ -119,6 +145,10 @@ public class GeofenceService {
         return saved;
     }
 
+    /**
+     * Consulta PostGIS ST_Covers para el punto longitud, latitud en SRID 4326.
+     * Devuelve si la geometría identificada cubre el punto, incluida su frontera.
+     */
     @Transactional(readOnly = true)
     public boolean covers(UUID geofenceId, double longitude, double latitude) {
         return jdbc.queryForObject(
@@ -129,6 +159,11 @@ public class GeofenceService {
                 geofenceId);
     }
 
+    /**
+     * Calcula con PostGIS la distancia mínima en metros a fronteras activas relevantes.
+     * Incluye el polígono del campus y los identificadores de módulos suministrados.
+     * Si no hay distancia disponible devuelve infinito positivo.
+     */
     @Transactional(readOnly = true)
     public double nearestBoundaryMeters(
             UUID campusId, List<UUID> relevantModuleIds, double longitude, double latitude) {
@@ -153,6 +188,10 @@ public class GeofenceService {
         return distance == null ? Double.POSITIVE_INFINITY : distance;
     }
 
+    /**
+     * Busca la geocerca principal del campus y exige que esté activa.
+     * Devuelve falso si falta o está inactiva.
+     */
     @Transactional(readOnly = true)
     public boolean hasCampusPolygon(UUID campusId) {
         return geofences
@@ -161,11 +200,20 @@ public class GeofenceService {
                 .isPresent();
     }
 
+    /**
+     * Busca la geocerca principal del campus sin filtrar actividad.
+     * Devuelve null cuando no hay una fila coincidente.
+     */
     @Transactional(readOnly = true)
     public Geofence campusPolygon(UUID campusId) {
         return geofences.findFirstByCampusIdAndType(campusId, GeofenceType.CAMPUS).orElse(null);
     }
 
+    /**
+     * Comprueba campus, nombre, tipo y validez del polígono.
+     * Para campus prohíbe padre y duplicado; para módulo exige padre del mismo campus.
+     * PostGIS comprueba que el módulo quede cubierto por su padre.
+     */
     private void validateBase(
             UUID campusId,
             String name,
@@ -216,6 +264,11 @@ public class GeofenceService {
         }
     }
 
+    /**
+     * Exige un GeoJSON Polygon y comprueba recursivamente las coordenadas.
+     * PostGIS valida geometría no vacía, tipo y SRID; convierte errores en respuesta de dominio.
+     * Devuelve el JSON canónico que se usará en las consultas.
+     */
     private String validatePolygon(JsonNode geometry) {
         if (geometry == null
                 || !geometry.isObject()
@@ -245,6 +298,11 @@ public class GeofenceService {
         return value;
     }
 
+    /**
+     * Recorre arreglos de coordenadas hasta encontrar posiciones numéricas.
+     * Exige pares 2D longitud-latitud dentro de los rangos WGS84.
+     * Rechaza estructuras o coordenadas que no satisfacen esas reglas.
+     */
     private void validatePositions(JsonNode node) {
         if (node.isArray()
                 && node.size() >= 2
@@ -267,6 +325,10 @@ public class GeofenceService {
                     "INVALID_GEOMETRY", "El GeoJSON tiene una estructura de coordenadas inválida.");
     }
 
+    /**
+     * Inserta la versión actual guardada, con geometría y datos asociados.
+     * ON CONFLICT evita duplicar la pareja geocerca y versión; no borra versiones anteriores.
+     */
     private void snapshot(Geofence g) {
         jdbc.update(
                 """

@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import java.time.LocalTime;
 import java.util.UUID;
 
+/** Entidad que define el día y el intervalo regular de una clase. */
 @Entity
 @Table(name = "class_schedules")
 public class ClassSchedule {

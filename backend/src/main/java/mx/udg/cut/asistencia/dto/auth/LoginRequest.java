@@ -3,6 +3,7 @@ package mx.udg.cut.asistencia.dto.auth;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
+/** Recibe el código y una contraseña opcional; el perfil demo la ignora, no la guarda ni la registra. */
 public record LoginRequest(
         @NotBlank
         @Pattern(regexp = "^[0-9]{7}$", message = "El código debe tener exactamente siete dígitos")

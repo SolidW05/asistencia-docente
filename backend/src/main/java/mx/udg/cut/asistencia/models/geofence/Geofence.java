@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.util.UUID;
 
+/** Entidad de una zona geográfica con versión y geometría. */
 @Entity
 @Table(name = "geofences")
 public class Geofence {

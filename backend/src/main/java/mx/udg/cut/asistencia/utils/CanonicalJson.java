@@ -35,6 +35,7 @@ public class CanonicalJson {
                         .setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
     }
 
+    /** Serializa la estructura normalizada sin depender del orden original de claves. */
     public String write(Object value) {
         try {
             return mapper.writeValueAsString(normalize(value));
@@ -43,6 +44,7 @@ public class CanonicalJson {
         }
     }
 
+    /** Ordena objetos y normaliza números recursivamente para producir la misma representación. */
     private Object normalize(Object value) {
         if (value instanceof JsonNode node) {
             if (node.isObject()) {
@@ -84,6 +86,7 @@ public class CanonicalJson {
         return n.signum() == 0 ? BigDecimal.ZERO : n;
     }
 
+    /** Interpreta JSON o informa que el contenido no es válido. */
     public JsonNode read(String value) {
         try {
             return mapper.readTree(value);
@@ -115,9 +118,11 @@ public class CanonicalJson {
         envelope.put("previousHash", previousHash);
         envelope.put("serverAt", serverAt);
         envelope.put("teacherId", teacherId);
-        return sha256(write(envelope));
+        String message = write(envelope);
+        return sha256(message);
     }
 
+    /** Calcula SHA-256 sobre los bytes UTF-8 y devuelve hexadecimal en minúsculas. */
     public String sha256(String value) {
         try {
             return HexFormat.of()

@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/** Entidad persistente que conserva la asistencia y el snapshot usado como evidencia. */
 @Entity
 @Table(name = "attendances")
 public class AttendanceRecord {

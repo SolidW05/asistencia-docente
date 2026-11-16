@@ -12,11 +12,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+/**
+ * Implementa el proveedor de identidad exclusivo del perfil demo.
+ * Deriva un UUID estable a partir del código y asigna ADMIN según la configuración.
+ * Los demás códigos reciben identidad TEACHER con nombre simulado.
+ * No comprueba contraseñas ni consulta una institución externa.
+ */
 @Component
 @Profile("demo")
 public class DemoIdentityProvider implements IdentityProvider {
     private final Set<String> administratorCodes;
 
+    /**
+     * Separa la lista configurada de códigos administradores y descarta entradas vacías.
+     * Rechaza una lista vacía o códigos que no tengan exactamente siete dígitos.
+     */
     public DemoIdentityProvider(@Value("${app.demo.admin-codes}") String administratorCodes) {
         this.administratorCodes =
                 Arrays.stream(administratorCodes.split(","))
@@ -29,6 +39,10 @@ public class DemoIdentityProvider implements IdentityProvider {
                     "DEMO_ADMIN_CODES debe contener códigos explícitos de siete dígitos.");
     }
 
+    /**
+     * Deriva UUID determinista del código y construye nombre y rol simulados.
+     * Asigna ADMIN a los códigos configurados y TEACHER al resto; no valida contraseña.
+     */
     @Override
     public DemoIdentity authenticate(String code) {
         boolean admin = administratorCodes.contains(code);

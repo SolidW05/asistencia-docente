@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
+/** Selecciona la implementación de identidad compatible con el perfil activo. */
 @Configuration
 @Profile("!demo")
 public class IdentityProviderProfileConfig {

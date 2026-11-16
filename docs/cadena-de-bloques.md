@@ -29,7 +29,7 @@ payload, previousHash, serverAt, teacherId
 
 También ordena recursivamente las claves del payload. Los arrays mantienen el orden; las referencias de configuración se ordenan por identificador. Usa UTF-8, sin espacios de presentación ni salto final, escapes JSON de Jackson y números normalizados con BigDecimal, sin exponente ni ceros decimales finales. El cero negativo se representa como 0. Los instantes usan UTC con microsegundos; los hashes son hexadecimales minúsculos de 64 caracteres.
 
-El génesis conserva su excepción: su digest es el de la frase cruda. La actualización no reescribe los hashes v2 anteriores.
+La actualización conserva el formato y los hashes existentes.
 
 ## Eventos
 
@@ -47,7 +47,7 @@ Login, consultas, comprobación de ubicación, alta de clases/jefes y reintentos
 
 El registro bloquea primero la fila del docente para comprobar idempotencia y duplicados. La revisión toma el mismo bloqueo y vuelve a leer el estado antes de decidir si hay una transición. Después se bloquea la única fila de global_chain_head mediante SELECT FOR UPDATE para asignar índice y enlace.
 
-Este orden serializa movimientos del mismo docente y la cabecera serializa eventos de todos los docentes, incluso con varias instancias Java. Estado, bloque y cabecera se confirman juntos; un fallo revierte la operación. No existen endpoints de edición o borrado de bloques.
+Este orden serializa movimientos del mismo docente y la cabecera serializa eventos de todos los docentes, incluso con varias instancias Java. Estado, bloque y cabecera se confirman juntos; un fallo revierte la operación. Antes de agregar se comprueban hashes, índices, enlaces y cabecera de los bloques persistidos. Una inconsistencia impide agregar y revierte la operación. La comprobación completa de asistencias se realiza desde la consulta de verificación, una vez confirmadas las transacciones.
 
 La base conserva una sola asistencia por docente/ocurrencia y una clave de idempotencia única por docente. La tabla de bloques permite varios eventos por asistencia. Un registro no debe confundirse con el número de movimientos que produjo.
 
@@ -58,6 +58,14 @@ GET `/api/chain` y GET `/api/chain/verify` son exclusivos de ADMIN. La consulta 
 El verificador lee con REPEATABLE_READ y comprueba génesis, índices consecutivos, enlaces, formato, tipo de evento y hash recalculado. Para ATTENDANCE_RECORDED conserva la comparación contra el snapshot original y los datos espaciales/temporales. Reconstruye el estado por asistencia al recorrer los eventos, valida las transiciones y finalmente compara el estado reconstruido con el registro actual. Una confirmación válida no invalida el estado pendiente guardado en el primer bloque.
 
 El conteo de asistencias se coteja contra eventos iniciales, mientras que la cabecera se coteja contra todos los bloques. Se conserva la comprobación de versiones de geocerca. La respuesta es `{valid,checkedBlocks,firstError}`; checkedBlocks incluye el génesis y termina al detectar el primer error.
+
+## Simulación de alteración
+
+Con perfil `demo` y `APP_CHAIN_ATTACK_ENABLED=true`, ADMIN puede alterar un bloque desde **Cadena global**. La API guarda el payload original y el alterado en `chain_attack_backup` dentro de la misma transacción que cambia `global_chain_blocks.payload`. Solo añade el dato `_simulacionAtaque`; no modifica el génesis, el hash guardado, los enlaces ni los datos de la asistencia.
+
+El hash recalculado incluye ese contenido nuevo y deja de coincidir con el almacenado. El verificador informa el índice del bloque y se detiene en el primer error. La simulación y el respaldo persisten después de reiniciar. Se admite una simulación pendiente a la vez.
+
+La restauración explícita repone el payload original sin recalcular hashes. Si el bloque sufrió otro cambio después del ataque, se rechaza la restauración para evitar sobrescribirlo. Esta función está limitada al perfil de demostración, requiere sesión ADMIN y conserva CSRF. No es una función de edición normal de la cadena.
 
 ## Actualización y alcance
 

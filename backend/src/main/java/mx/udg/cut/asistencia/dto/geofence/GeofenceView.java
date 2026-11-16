@@ -5,6 +5,7 @@ import mx.udg.cut.asistencia.models.geofence.GeofenceType;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.UUID;
 
+/** Expone la geometría y versión actual de una geocerca. */
 public record GeofenceView(
         UUID id,
         UUID campusId,

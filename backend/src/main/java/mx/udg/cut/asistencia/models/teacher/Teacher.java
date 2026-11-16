@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
+/** Entidad de una persona identificada por código y rol persistente. */
 @Entity
 @Table(name = "teachers")
 public class Teacher {

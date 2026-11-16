@@ -6,6 +6,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * Cabecera única con índice, hash y total del último estado conocido de la cadena.
+ * Facilita y serializa las escrituras; la verificación la contrasta con los bloques reales.
+ */
 @Entity
 @Table(name = "global_chain_head")
 public class ChainHead {

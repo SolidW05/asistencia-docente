@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 
+/** Recibe la información necesaria para comprobar ubicación y horario sin registrar. */
 public record CheckRequest(
         @NotNull
         UUID occurrenceId,

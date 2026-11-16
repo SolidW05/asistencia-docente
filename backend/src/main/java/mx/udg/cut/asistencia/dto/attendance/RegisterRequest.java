@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
+/** Recibe los datos necesarios para registrar la asistencia de una ocurrencia. */
 public record RegisterRequest(
         @NotNull
         UUID occurrenceId,

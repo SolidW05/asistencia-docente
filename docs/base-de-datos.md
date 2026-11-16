@@ -31,10 +31,12 @@ La escritura bloquea el docente antes de comprobar duplicados y después la cabe
 
 Una base nueva contiene únicamente el Génesis global y la cabecera. Docentes, campus, geocercas, clases y asistencias permanecen vacíos hasta las acciones explícitas del usuario. No se conservan tablas de cadenas antiguas ni se importan datos anteriores. El inicializador ahora aplica una actualización compatible bajo bloqueo transaccional: amplía roles y tipos de evento, agrega created_by a clases y permite varios bloques por asistencia. Conserva registros, hashes y cabecera. Véase [la cadena y su génesis](cadena-de-bloques.md).
 
-Compose crea el volumen `metodologia-geocercas_postgres_data`. `docker compose restart` y `docker compose down` conservan sus datos. Un reinicio deliberado con `docker compose down -v` elimina el volumen del proyecto; el siguiente arranque crea el esquema y un único Génesis. No hay scripts de carga de pruebas ni resultados sintéticos guardados.
+Compose crea el volumen `metodologia-geocercas_postgres_data`. `docker compose restart` y `docker compose down` conservan sus datos. Un reinicio deliberado con `docker compose down -v` elimina el volumen del proyecto; el siguiente arranque crea el esquema y un único Génesis. La prueba de `scripts/probar_cadena.py` crea datos ficticios únicamente en el entorno independiente de auditoría; no carga datos automáticamente en la base habitual.
 
 ## Revisión administrativa
 
 teachers admite TEACHER, JEFE y ADMIN. teaching_classes conserva el creador separado del docente asignado; ese creador determina el alcance de JEFE. Los eventos se guardan en global_chain_blocks y el estado actual en attendances; el payload inicial permanece intacto.
 
 La actualización elimina la unicidad por attendance_id de bloques y amplía el CHECK para ATTENDANCE_STATUS_CHANGED. Mantiene la unicidad de asistencia por docente/ocurrencia. Estado, bloque y cabecera se guardan en una sola transacción. Las clases heredadas sin creador quedan bajo ADMIN.
+
+La tabla `chain_attack_backup` referencia el bloque alterado y guarda `original_payload` y `altered_payload`. Permite restaurar la demostración después de reiniciar sin recalcular hashes. El respaldo y la alteración se confirman juntos bajo bloqueo de cabecera. Esta tabla no es una copia de seguridad general. La actualización incorpora la tabla sin modificar los bloques o hashes existentes.

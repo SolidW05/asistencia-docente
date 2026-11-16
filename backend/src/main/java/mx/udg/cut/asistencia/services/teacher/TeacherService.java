@@ -10,14 +10,28 @@ import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Administra las identidades docentes y las designaciones de jefe.
+ * Usa el repositorio para buscar, bloquear y guardar filas en transacciones.
+ * Valida códigos de siete dígitos antes de crear o promover.
+ * La promoción a JEFE no degrada una identidad que ya es ADMIN.
+ */
 @Service
 public class TeacherService {
     private final TeacherRepository teachers;
 
+    /**
+     * Recibe el repositorio de identidades y roles persistidos.
+     * Los métodos de escritura comparten su transacción con las operaciones JPA.
+     */
     public TeacherService(TeacherRepository teachers) {
         this.teachers = teachers;
     }
 
+    /**
+     * Lee los docentes ordenados por código y los transforma en vistas administrativas.
+     * Incluye los roles persistidos y no modifica las entidades.
+     */
     @Transactional(readOnly = true)
     public List<TeacherView> list() {
         return teachers.findAllByOrderByCodeAsc().stream()
@@ -25,6 +39,11 @@ public class TeacherService {
                 .toList();
     }
 
+    /**
+     * Valida el código y bloquea una fila existente antes de actualizarla.
+     * Si no existe, prepara un docente nuevo con rol JEFE.
+     * No degrada un ADMIN y devuelve la vista de la fila guardada.
+     */
     @Transactional
     public TeacherView createOrPromoteJefe(String code) {
         validateCode(code);
@@ -41,6 +60,10 @@ public class TeacherService {
         return view(teachers.save(teacher));
     }
 
+    /**
+     * Valida el código y busca una fila existente con bloqueo de escritura.
+     * Si falta, crea una identidad TEACHER y devuelve su UUID persistido.
+     */
     @Transactional
     public UUID getOrCreateByCode(String code) {
         validateCode(code);
@@ -56,12 +79,20 @@ public class TeacherService {
                 .getId();
     }
 
+    /**
+     * Exige un código no nulo de exactamente siete dígitos.
+     * Devuelve un error de solicitud inválida si no cumple el formato.
+     */
     private void validateCode(String code) {
         if (code == null || !code.matches("[0-9]{7}"))
             throw ApiException.badRequest(
                     "INVALID_TEACHER_CODE", "El código docente debe tener siete dígitos.");
     }
 
+    /**
+     * Construye un DTO con UUID, código, nombre y rol de la entidad.
+     * No cambia el docente ni consulta otras tablas.
+     */
     private TeacherView view(Teacher teacher) {
         return new TeacherView(
                 teacher.getId(), teacher.getCode(), teacher.getName(), teacher.getRole());

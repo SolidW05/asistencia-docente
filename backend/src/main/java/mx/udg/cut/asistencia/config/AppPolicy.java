@@ -4,6 +4,7 @@ import java.time.ZoneId;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+/** Agrupa los límites configurables usados para evaluar la asistencia. */
 @Component
 public class AppPolicy {
     private final double maxAccuracyMeters;

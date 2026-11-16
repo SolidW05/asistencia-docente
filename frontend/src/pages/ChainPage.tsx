@@ -11,6 +11,9 @@ export function ChainPage() {
   const [loading, setLoading] = useState(true)
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
+  const [attack, setAttack] = useState<{ enabled: boolean; affectedBlockId: string | null } | null>(null)
+  const [selected, setSelected] = useState('')
+  const [acting, setActing] = useState(false)
   const movements = chain?.blocks.filter((block) => block.eventType !== 'GENESIS') ?? []
 
   const reload = useCallback(async (includeVerification = true) => {
@@ -18,6 +21,7 @@ export function ChainPage() {
     try {
       const nextChain = await api.chain()
       setChain(nextChain)
+      setAttack(await api.attackStatus())
       if (includeVerification) setVerification(await api.verifyChain())
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo cargar el historial y la cadena.')
@@ -34,6 +38,17 @@ export function ChainPage() {
     try { setVerification(await api.verifyChain()) }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo verificar la cadena.') }
     finally { setVerifying(false) }
+  }
+
+  async function simulate(restore: boolean) {
+    setActing(true)
+    setError('')
+    try {
+      if (restore) await api.restoreChain()
+      else await api.attackChain(selected)
+      await reload()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo completar la simulación.') }
+    finally { setActing(false) }
   }
 
   if (loading) return <Loading label="Cargando historial y cadena…" />
@@ -63,6 +78,16 @@ export function ChainPage() {
         <span className={`verification-icon ${verification.valid ? 'valid' : 'invalid'}`}>{verification.valid ? '✓' : '!'}</span>
         <div className="verification-copy"><strong>{verification.valid ? 'Cadena global íntegra' : 'Se encontró una inconsistencia'}</strong><span>{verification.checkedBlocks} bloques globales revisados{verification.firstError ? ` · ${verification.firstError}` : ' · hashes, enlaces, índices y registros coinciden'}</span></div>
         <button className="button button-quiet button-small" onClick={() => void verify()} disabled={verifying}>{verifying ? 'Verificando…' : 'Verificar de nuevo'}</button>
+      </section>}
+
+      {attack?.enabled && <section className="panel history-panel">
+        <div className="panel-header"><div><span className="eyebrow">Demostración controlada</span><h2>Simular alteración</h2></div></div>
+        <p>Modifica el contenido persistido de un bloque sin cambiar su hash. La verificación detectará la alteración; después puedes restaurar el contenido original.</p>
+        {attack.affectedBlockId ? <div><p>Bloque alterado: <code>{attack.affectedBlockId}</code></p><button className="button button-secondary" disabled={acting} onClick={() => void simulate(true)}>Restaurar contenido original</button></div> : <div>
+          <label htmlFor="attack-block">Bloque de asistencia </label>
+          <select id="attack-block" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">Selecciona un bloque</option>{movements.map((block) => <option key={block.id} value={block.id}>#{block.index} · {block.eventType}</option>)}</select>{' '}
+          <button className="button button-secondary" disabled={!selected || acting} onClick={() => void simulate(false)}>Alterar bloque</button>
+        </div>}
       </section>}
 
       <section className="panel history-panel">

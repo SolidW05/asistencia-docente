@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+/** Agrupa coordenadas, precisión y fecha de captura informadas por el dispositivo. */
 public record LocationInput(
         @NotNull
         @DecimalMin("-90")

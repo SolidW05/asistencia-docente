@@ -27,8 +27,9 @@ La base nueva arranca sin docentes, campus, geocercas, clases ni asistencias. El
 5. El docente registra asistencia o reporta una incidencia justificada. En Mis asistencias ve su estado y sus cambios.
 6. En Asistencias, JEFE revisa pendientes de sus clases y ADMIN consulta todos. Confirmar requiere comentario y agrega un nuevo bloque.
 7. Solo ADMIN abre Cadena para consultar todos los bloques y verificarla. El índice 0 es el génesis; los registros y revisiones empiezan desde el índice 1.
+8. Con `APP_CHAIN_ATTACK_ENABLED=true`, la misma pantalla permite seleccionar un bloque, **Alterar bloque**, verificar la inconsistencia y **Restaurar contenido original**. Esta opción requiere el perfil `demo`.
 
-El perfil `demo` acepta códigos de siete dígitos y no valida la contraseña. Los nombres son etiquetas locales como `Docente <código>` y `Administrador <código>`. Los códigos configurados no son cuentas precargadas. El rol JEFE se asigna en la base y se conserva al entrar. Otro perfil sin proveedor real configurado falla explícitamente.
+El perfil `demo` permite entrar con un código de siete dígitos. El campo de contraseña se conserva editable y es opcional: puede quedar vacío o contener cualquier texto, sin validarlo, almacenarlo ni registrarlo. Los nombres son etiquetas locales como `Docente <código>` y `Administrador <código>`. Los códigos configurados no son cuentas precargadas. El rol JEFE se asigna en la base y se conserva al entrar. Otro perfil sin proveedor real configurado falla explícitamente.
 
 ## Persistencia y reinicio
 
@@ -57,6 +58,7 @@ $env:SPRING_PROFILES_ACTIVE='demo'
 $env:DATABASE_URL='jdbc:postgresql://localhost:5433/asistencia'
 $env:DATABASE_USER='asistencia'
 $env:DATABASE_PASSWORD='demo-change-me'
+$env:APP_CHAIN_ATTACK_ENABLED='true'
 Set-Location backend
 .\mvnw.cmd spring-boot:run
 ```
@@ -80,3 +82,15 @@ Vite hace proxy al backend local. La geolocalización funciona en localhost; par
 Se incluyen pruebas de roles, autorización y eventos en `backend/src/test/java`. Ejecutar `.\mvnw.cmd test` dentro de `backend/` y `npm.cmd run build` dentro de `frontend/`. Véase [el historial de cambios y validaciones](docs/cambios-roles-revision.md) para la evidencia y las limitaciones.
 
 La cadena es centralizada: los hashes permiten comprobar consistencia interna, pero no demuestran presencia física ni impiden que quien controle toda la base reescriba la evidencia.
+
+## Demostración de integridad y ataque
+
+1. Registrar al menos dos asistencias (o registrar una y confirmar su revisión) para tener movimientos encadenados. La configuración inicial anterior permite crear los registros desde la aplicación.
+2. Como ADMIN, abrir **Cadena global** y verificar que aparezca **Cadena global íntegra**. Expandir los bloques muestra ID, fecha, datos, hash anterior y hash actual completos.
+3. En **Simular alteración**, seleccionar un movimiento anterior y pulsar **Alterar bloque**. El backend añade `_simulacionAtaque` al payload guardado en PostgreSQL y conserva el hash almacenado y los enlaces. La pantalla vuelve a verificar e identifica el bloque cuyo hash ya no coincide.
+4. Pulsar **Verificar de nuevo** para repetir la comprobación. Reiniciar la aplicación conserva tanto la alteración como su respaldo; la inconsistencia sigue siendo detectable.
+5. Pulsar **Restaurar contenido original** para recuperar exactamente el payload respaldado y comprobar de nuevo la integridad. La restauración no recalcula hashes ni corrige otras alteraciones.
+
+Mientras una cadena tiene hashes o enlaces corruptos, las nuevas escrituras de asistencia se rechazan y su transacción se revierte. El génesis se conserva como ancla inicial para el primer movimiento. Desactivar la simulación con `APP_CHAIN_ATTACK_ENABLED=false` oculta sus controles y rechaza sus escrituras en la API.
+
+El payload contiene los datos del evento; el hash protege además ID, índice, fecha y hash anterior, dentro de una envoltura JSON canónica. Basta cambiar uno de esos valores sin actualizar el hash para detectar una inconsistencia. Véanse la [explicación del algoritmo](docs/cadena-de-bloques.md), la [auditoría contra la consigna](docs/auditoria-cadena.md) y la [guía para explicar el backend](docs/guia-backend.md). El informe técnico en PDF queda fuera de esta revisión.

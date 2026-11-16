@@ -10,20 +10,34 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** Inicializa el bloque 0 y su cabecera una sola vez, sin crear datos de demostración. */
+/**
+ * Inicializa el ancla que proporciona el hash anterior al primer registro.
+ * Debe ejecutarse dentro de la transacción y bloqueo de inicialización del esquema.
+ * Si ya hay cabecera no crea otra; si hay datos sin cabecera rechaza reinicializar.
+ * El bloque inicial y su cabecera se insertan juntos mediante JDBC.
+ */
 @Service
 public class GenesisService {
     private final JdbcTemplate jdbc;
     private final CanonicalJson json;
     private final Clock clock;
 
+    /**
+     * Recibe JDBC, JSON canónico y reloj de aplicación.
+     * Se utilizan durante la inicialización transaccional del ancla y la cabecera.
+     */
     public GenesisService(JdbcTemplate jdbc, CanonicalJson json, Clock clock) {
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
     }
 
-    /** Se llama bajo la transacción y el bloqueo de DatabaseInitializationConfig. */
+    /**
+     * Exige una transacción activa y comprueba el hash esperado de la frase inicial.
+     * Si ya hay cabecera termina sin insertar otra.
+     * Si hay bloques o asistencias sin cabecera rechaza reinicializar para no ocultar datos.
+     * En una base vacía inserta el ancla y la cabecera inicial juntas.
+     */
     public void initialize() {
         if (!TransactionSynchronizationManager.isActualTransactionActive())
             throw new IllegalStateException(

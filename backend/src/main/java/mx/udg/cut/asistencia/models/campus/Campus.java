@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.util.UUID;
 
+/** Entidad persistente de un campus donde pueden definirse geocercas. */
 @Entity
 @Table(name = "campuses")
 public class Campus {

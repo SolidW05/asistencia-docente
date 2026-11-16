@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+/** Entidad de una sesión concreta de clase en una fecha determinada. */
 @Entity
 @Table(name = "class_occurrences")
 public class ClassOccurrence {

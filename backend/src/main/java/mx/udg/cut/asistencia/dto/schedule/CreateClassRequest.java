@@ -7,6 +7,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
+/** Recibe los datos necesarios para asignar una clase. */
 public record CreateClassRequest(
         @NotNull
         @Size(min = 1, max = 120)

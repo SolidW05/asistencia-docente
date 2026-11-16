@@ -18,7 +18,7 @@ Una revisión confirma un pendiente y agrega un evento. Repetirla sobre una asis
 ## Recorrido docente
 
 1. GET `/api/auth/csrf`; conservar cookie y encabezado indicado.
-2. POST `/api/auth/login` con `{code,password}` y CSRF; renovar el token después.
+2. POST `/api/auth/login` con `{code,password}` y CSRF; renovar el token después. `password` es opcional y se ignora durante la simulación: también se admite enviar solo `{code}`.
 3. Consultar `/api/classes?date=YYYY-MM-DD` y `/api/geofences`.
 4. Seleccionar una ocurrencia y solicitar ubicación al navegador.
 5. POST `/api/attendance/check`; leer resultados y justificación requerida.
@@ -37,3 +37,13 @@ Una incidencia sin coordenadas puede usar este cuerpo, reemplazando el UUID por 
 GET `/api/chain` y GET `/api/chain/verify` son exclusivos de ADMIN. La primera entrega todos los bloques y sus datos; la segunda reconstruye y verifica toda la secuencia, incluidos los cambios de estado. Un docente recibe solo su registro e historial funcional.
 
 El génesis tiene índice 0; el registro inicial usa ATTENDANCE_RECORDED y la revisión ATTENDANCE_STATUS_CHANGED. Consultar o repetir una operación ya aplicada no agrega bloques. Los errores 409 indican conflictos de idempotencia, duplicados o versión desactualizada, según la operación.
+
+La demostración de ataque requiere ADMIN, perfil `demo` y `APP_CHAIN_ATTACK_ENABLED=true`. Las escrituras requieren el token CSRF habitual y no reciben un payload arbitrario:
+
+| Método y ruta | Efecto |
+|---|---|
+| GET `/api/chain/attack` | Devuelve `{enabled,affectedBlockId}`; `affectedBlockId` es null si no hay simulación pendiente. |
+| POST `/api/chain/attack/{blockId}` | Respalda y altera el payload del bloque indicado sin recalcular su hash. El génesis no se puede seleccionar. |
+| POST `/api/chain/attack/restore` | Restaura el payload respaldado si sigue coincidiendo con el contenido que alteró la simulación. |
+
+La API rechaza otra simulación mientras haya una pendiente y rechaza empezar sobre una cadena ya inválida. Un error al restaurar no sobrescribe modificaciones posteriores. GET `/api/chain/verify` sigue siendo la operación que comprueba la integridad.

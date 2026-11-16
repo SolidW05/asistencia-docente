@@ -5,7 +5,7 @@ Prototipo local. Todos los identificadores son UUID en cadenas. API JSON bajo `/
 ## Identidad y permisos
 
 - GET `/auth/csrf` es público.
-- POST `/auth/login` recibe `{code,password}` y devuelve `{id,code,name,role}`. Los roles son `TEACHER`, `JEFE` y `ADMIN`. El perfil `demo` exige siete dígitos e ignora la contraseña, sin persistirla.
+- POST `/auth/login` recibe `{code,password}` y devuelve `{id,code,name,role}`. `password` es opcional y puede omitirse. Los roles son `TEACHER`, `JEFE` y `ADMIN`. El perfil `demo` exige un código de siete dígitos e ignora la contraseña, sin validarla, almacenarla ni registrarla; el acceso es completamente simulado.
 - GET `/auth/me` devuelve la identidad vigente; POST `/auth/logout` cierra la sesión.
 - Los códigos principales se configuran mediante `DEMO_ADMIN_CODES`. ADMIN da de alta jefes; la API de alta no acepta asignar ADMIN.
 - POST `/admin/teachers`, solo ADMIN, recibe `{"code":"1234567"}`. Si no existe, crea la cuenta con rol JEFE; si ya es docente, conserva su identidad y la promueve. El siguiente login respeta JEFE.

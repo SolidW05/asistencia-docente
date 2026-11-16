@@ -22,16 +22,31 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Lee la cadena global y verifica su integridad y evidencia de asistencia asociada.
+ * El recorrido ordenado comprueba génesis, índices, enlaces, hashes y estados.
+ * Las consultas JDBC leen también snapshots y versiones históricas de geocercas.
+ * Informa el primer error; un atacante con control total podría reescribir toda la cadena.
+ */
 @Service
 public class ChainService {
     private final JdbcTemplate jdbc;
     private final CanonicalJson json;
 
+    /**
+     * Recibe JDBC para leer evidencia y JSON canónico para interpretarla y recalcular hashes.
+     * Las consultas de lectura se coordinan mediante transacciones del servicio.
+     */
     public ChainService(JdbcTemplate jdbc, CanonicalJson json) {
         this.jdbc = jdbc;
         this.json = json;
     }
 
+    /**
+     * Lee cabecera y todos los bloques globales en una instantánea repetible.
+     * El UUID recibido se incluye como metadato de respuesta y no filtra los bloques.
+     * Si falta la cabecera usa índice -1 y total 0, pero conserva los bloques que haya leído.
+     */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ChainView chain(UUID teacherId) {
         GlobalHead head = readHead();
@@ -57,6 +72,10 @@ public class ChainService {
                 visible);
     }
 
+    /**
+     * Lee eventos de una asistencia en orden de índice y reconstruye sus cambios de estado.
+     * Interpreta el payload inicial y los campos de revisión para producir vistas históricas.
+     */
     @Transactional(readOnly = true)
     public List<AttendanceHistoryView> history(UUID attendanceId) {
         return jdbc.query(
@@ -91,7 +110,13 @@ public class ChainService {
                 attendanceId);
     }
 
-    /** Verifica la cadena global y el estado final de cada asistencia. */
+    /**
+     * Recorre toda la cadena global; el UUID de solicitud no filtra la verificación.
+     * Comprueba ancla, índice, enlace, formato, metadatos y hash recalculado de cada bloque.
+     * Contrasta asistencia, snapshots, versiones y transición de estado con la evidencia persistida.
+     * Al final comprueba cantidades, estado actual y cabecera, y comunica el primer error.
+     * Una reescritura completa por quien controla la base puede producir otra cadena coherente.
+     */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VerifyView verify(UUID requestingTeacherId) {
         List<BlockRaw> blocks = readAll();
@@ -106,6 +131,7 @@ public class ChainService {
             checked++;
             error = genesisError(genesis);
         }
+        // Desde el ancla, cada bloque debe ocupar el siguiente índice y enlazar el hash anterior.
         String expectedPrevious = ChainDefinition.GENESIS_HASH;
         long expectedIndex = 1;
         for (int i = 1; error == null && i < blocks.size(); i++) {
@@ -164,6 +190,7 @@ public class ChainService {
                     error = "El hash no coincide en el bloque " + block.index() + ".";
                     break;
                 }
+                // Tras validar el hash, se contrasta la evidencia con la asistencia relacionada.
                 LinkedRecord record = findLinkedRecord(block.attendanceId());
                 if (record == null) {
                     error = "El bloque " + block.index() + " no tiene un registro de asistencia.";
@@ -178,6 +205,7 @@ public class ChainService {
                 }
                 linkedRecords.putIfAbsent(block.attendanceId(), record);
                 JsonNode payload = json.read(block.payload());
+                // El evento inicial fija el estado y snapshot; los posteriores deben respetar la transición.
                 if (attendanceRecorded) {
                     if (latestStatus.containsKey(block.attendanceId())) {
                         error =
@@ -327,6 +355,7 @@ public class ChainService {
                                 + " no puede interpretarse.";
             }
         }
+        // Solo si el recorrido no falló se comparan cantidad, estados finales y cabecera global.
         if (error == null) {
             long attendanceCount =
                     jdbc.queryForObject("select count(*) from attendances", Long.class);
@@ -346,6 +375,7 @@ public class ChainService {
             }
         }
         if (error == null) {
+            // La cabecera es un resumen y se coteja con el último bloque realmente leído.
             GlobalHead head = readHead();
             BlockRaw last = blocks.getLast();
             if (head == null)
@@ -360,6 +390,10 @@ public class ChainService {
         return new VerifyView(error == null, checked, error);
     }
 
+    /**
+     * Comprueba la identidad y campos esperados del ancla inicial de la cadena.
+     * Verifica su payload, enlace y hash de frase; devuelve el primer error o null.
+     */
     private String genesisError(BlockRaw block) {
         if (!ChainDefinition.GENESIS_BLOCK_ID.equals(block.id()))
             return "El identificador del génesis fue alterado.";
@@ -385,6 +419,10 @@ public class ChainService {
         return null;
     }
 
+    /**
+     * Lee todas las columnas de bloques en orden ascendente de índice.
+     * La conversión JDBC conserva los campos necesarios para recalcular hashes.
+     */
     private List<BlockRaw> readAll() {
         return jdbc.query(
                 """
@@ -394,6 +432,10 @@ public class ChainService {
                 (rs, row) -> mapBlock(rs));
     }
 
+    /**
+     * Convierte una fila JDBC en el registro interno usado por el verificador.
+     * La fecha SQL nula se conserva para representar el ancla.
+     */
     private BlockRaw mapBlock(java.sql.ResultSet rs) throws java.sql.SQLException {
         Timestamp stamp = rs.getTimestamp("server_at");
         return new BlockRaw(
@@ -410,6 +452,10 @@ public class ChainService {
                 rs.getInt("format_version"));
     }
 
+    /**
+     * Transforma el bloque interno en DTO para inspección.
+     * Si el payload no es JSON válido lo muestra como texto en vez de ocultar el bloque.
+     */
     private BlockView view(BlockRaw block) {
         JsonNode payload;
         try {
@@ -430,6 +476,10 @@ public class ChainService {
                 block.formatVersion());
     }
 
+    /**
+     * Lee la cabecera global única mediante JDBC.
+     * Devuelve null si falta la fila de identificador uno.
+     */
     private GlobalHead readHead() {
         List<GlobalHead> rows =
                 jdbc.query(
@@ -443,6 +493,10 @@ public class ChainService {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
+    /**
+     * Consulta la asistencia relacionada y las columnas usadas como evidencia.
+     * Devuelve null si el identificador del bloque no tiene fila asociada.
+     */
     private LinkedRecord findLinkedRecord(UUID attendanceId) {
         List<LinkedRecord> found =
                 jdbc.query(
@@ -469,6 +523,11 @@ public class ChainService {
         return found.isEmpty() ? null : found.getFirst();
     }
 
+    /**
+     * Compara datos sellados del payload inicial con la asistencia persistida.
+     * Revisa identidades, resultados, motivos, ubicación y configuración normalizada.
+     * Devuelve el nombre del primer campo diferente o null si coinciden.
+     */
     private String attendanceMismatch(String payload, LinkedRecord record) {
         JsonNode p = json.read(payload);
         if (!record.occurrenceId().toString().equals(p.path("occurrenceId").asText()))
@@ -501,11 +560,19 @@ public class ChainService {
         return null;
     }
 
+    /**
+     * Comprueba si el texto representa uno de los estados iniciales admitidos.
+     * No interpreta otras cadenas como estados válidos.
+     */
     private boolean isAttendanceStatus(String value) {
         return AttendanceStatus.CONFIRMED.name().equals(value)
                 || AttendanceStatus.PENDING_REVIEW.name().equals(value);
     }
 
+    /**
+     * Lee las referencias de geocerca del snapshot del payload.
+     * Comprueba campus y cada módulo contra su versión histórica; devuelve indicación del primero faltante.
+     */
     private String configurationVersionsExist(String payload) {
         JsonNode config = json.read(payload).path("configuration");
         JsonNode campus = config.path("campusGeofence");
@@ -517,6 +584,11 @@ public class ChainService {
         return null;
     }
 
+    /**
+     * Busca la pareja de identificador y versión en geofence_versions.
+     * Compara campus, nombre, tipo, padre, actividad y geometría JSON normalizada.
+     * Devuelve falso cuando falta la fila o alguno de sus datos difiere.
+     */
     private boolean versionMatches(JsonNode ref) {
         List<VersionSnapshot> found =
                 jdbc.query(
@@ -546,10 +618,18 @@ public class ChainService {
                 && json.write(json.read(s.geometryJson())).equals(json.write(ref.path("geometry")));
     }
 
+    /**
+     * Convierte un nodo JSON ausente o nulo en null.
+     * Para otro nodo devuelve su representación textual.
+     */
     private String nullableText(JsonNode node) {
         return node == null || node.isNull() ? null : node.asText();
     }
 
+    /**
+     * Reúne las columnas persistidas de un bloque sin convertir el payload.
+     * Sirve para verificar contenido y construir la vista de inspección.
+     */
     private record BlockRaw(
             UUID id,
             String chainId,
@@ -565,6 +645,10 @@ public class ChainService {
     ) {
     }
 
+    /**
+     * Reúne la asistencia asociada y sus snapshots para las comparaciones de integridad.
+     * Permite comprobar datos iniciales y estado final sin exponer una entidad JPA.
+     */
     private record LinkedRecord(
             UUID teacherId,
             UUID occurrenceId,
@@ -581,6 +665,10 @@ public class ChainService {
     ) {
     }
 
+    /**
+     * Reúne la versión histórica de una geocerca leída de la base.
+     * Contiene los campos que se contrastan con la referencia sellada.
+     */
     private record VersionSnapshot(
             UUID campusId,
             String name,
@@ -591,6 +679,10 @@ public class ChainService {
     ) {
     }
 
+    /**
+     * Reúne cadena, último índice, último hash y cantidad declarados en cabecera.
+     * El verificador los contrasta con el recorrido completo de bloques.
+     */
     private record GlobalHead(
             String chainId,
             long lastIndex,

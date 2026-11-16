@@ -7,6 +7,11 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Mapea un bloque persistido: id identifica el evento, index fija su orden y serverAt su fecha.
+ * Payload conserva la evidencia; previousHash enlaza al bloque anterior y hash sella el contenido.
+ * Los demás campos identifican la cadena, el tipo de evento, docente, asistencia y formato.
+ */
 @Entity
 @Table(name = "global_chain_blocks")
 public class ChainBlock {

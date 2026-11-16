@@ -177,6 +177,13 @@ CREATE TABLE global_chain_blocks (
     )
 );
 
+-- Guarda el contenido original y el alterado para restaurar una simulación de ataque.
+CREATE TABLE chain_attack_backup (
+    block_id uuid PRIMARY KEY REFERENCES global_chain_blocks (id),
+    original_payload text NOT NULL,
+    altered_payload text NOT NULL
+);
+
 CREATE TABLE global_chain_head (
     id smallint PRIMARY KEY CHECK (id = 1),
     chain_id varchar(32) NOT NULL CHECK (chain_id = 'GLOBAL_ATTENDANCE'),

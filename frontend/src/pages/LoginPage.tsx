@@ -49,15 +49,16 @@ export function LoginPage({ onLogin, sessionError }: LoginPageProps) {
         <div className="login-card">
           <span className="eyebrow">Acceso de demostración</span>
           <h2>Bienvenido</h2>
-          <p className="muted">Usa un código de siete dígitos. La contraseña es un campo de demostración.</p>
+          <p className="muted">Usa un código de siete dígitos y, si lo deseas, una contraseña.</p>
           <div className="simulation-banner"><span aria-hidden="true">◉</span><span><strong>Autenticación institucional simulada</strong><small>Este prototipo no se conecta a la plataforma universitaria.</small></span></div>
           {(sessionError || error) && <div className="notice notice-error" role="alert">{error || sessionError}</div>}
           <form onSubmit={submit} className="login-form">
             <label className="field-label" htmlFor="teacher-code">Código docente</label>
             <input id="teacher-code" autoComplete="username" inputMode="numeric" maxLength={7} pattern="[0-9]{7}" placeholder="0000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 7))} required />
             <ErrorText>{code && code.length !== 7 ? 'Escribe los siete dígitos del código.' : undefined}</ErrorText>
-            <label className="field-label" htmlFor="password">Contraseña de demostración</label>
-            <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+            <label className="field-label" htmlFor="password">Contraseña</label>
+            <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <small>Opcional durante la simulación.</small>
             <button className="button button-primary button-full" type="submit" disabled={submitting}>{submitting ? 'Ingresando…' : 'Iniciar sesión'} <span aria-hidden="true">→</span></button>
           </form>
         </div>

@@ -7,6 +7,7 @@ import mx.udg.cut.asistencia.models.attendance.AttendanceStatus;
 import mx.udg.cut.asistencia.models.attendance.SpatialResult;
 import mx.udg.cut.asistencia.models.attendance.TemporalResult;
 
+/** Añade datos del docente y la clase a la vista administrativa de asistencia. */
 public record AdminAttendanceView(
         UUID id,
         UUID teacherId,

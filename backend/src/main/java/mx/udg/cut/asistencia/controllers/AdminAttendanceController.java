@@ -19,21 +19,42 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Expone el historial administrativo y la revisión de asistencias.
+ * Spring exige ADMIN o JEFE antes de invocar estas rutas.
+ * El servicio delimita las clases del jefe y valida la transición solicitada.
+ * El controlador transporta identidad, parámetros y DTO validado sin calcular el resultado.
+ */
 @RestController
 @RequestMapping("/api/admin/attendance")
 @PreAuthorize("@roleAccess.hasAnyRole(authentication, 'ADMIN', 'JEFE')")
 public class AdminAttendanceController {
     private final AttendanceService service;
 
+    /**
+     * Recibe el servicio que concentra la consulta y revisión transaccional.
+     * El controlador conserva la dependencia para delegar cada ruta.
+     */
     public AdminAttendanceController(AttendanceService service) {
         this.service = service;
     }
 
+    /**
+     * Toma el identificador del actor autenticado y devuelve vistas administrativas.
+     * ADMIN recibe todas las asistencias; JEFE solo las de clases que creó.
+     * Los resultados se ordenan por fecha de recepción descendente e incluyen estado actual.
+     */
     @GetMapping
     public List<AdminAttendanceView> list(@AuthenticationPrincipal DemoIdentity identity) {
         return service.adminHistory(identity.id());
     }
 
+    /**
+     * Recibe la asistencia por UUID, el actor de sesión y un DTO de revisión validado.
+     * Solo se admite confirmar con comentario y se comprueba el alcance sobre la clase.
+     * Si estaba pendiente, guarda la transición y su bloque en una transacción.
+     * Devuelve la vista actual; una revisión repetida no agrega otro evento.
+     */
     @PostMapping("/{attendanceId}/review")
     public AttendanceView review(
             Authentication authentication,

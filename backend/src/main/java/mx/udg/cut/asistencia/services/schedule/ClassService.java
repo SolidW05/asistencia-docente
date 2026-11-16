@@ -34,6 +34,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Coordina asignaciones, horarios, módulos y ocurrencias de clase.
+ * Las rutas administrativas usan roles actuales y restringen JEFE a su creación.
+ * JPA persiste entidades; JDBC materializa ocurrencias y reconcilia fechas sin asistencia.
+ * La zona horaria de política transforma los horarios locales en instantes.
+ */
 @Service
 public class ClassService {
     private final TeachingClassRepository classes;
@@ -47,6 +53,11 @@ public class ClassService {
     private final JdbcTemplate jdbc;
     private final AppPolicy policy;
 
+    /**
+     * Recibe repositorios de clases, horarios, ocurrencias, docentes, campus y geocercas.
+     * También recibe servicios de identidad y roles, JDBC y la política de zona horaria.
+     * Estas dependencias coordinan validación, persistencia y materialización de sesiones.
+     */
     public ClassService(
             TeachingClassRepository classes,
             ClassScheduleRepository schedules,
@@ -70,6 +81,10 @@ public class ClassService {
         this.policy = policy;
     }
 
+    /**
+     * Lista asignaciones del docente ordenadas por nombre y construye vistas para la fecha.
+     * La transacción permite crear una ocurrencia si la clase activa coincide con el día.
+     */
     @Transactional
     public List<ClassView> forTeacher(UUID teacherId, LocalDate date) {
         return classes.findByTeacherIdOrderByNameAsc(teacherId).stream()
@@ -77,11 +92,19 @@ public class ClassService {
                 .toList();
     }
 
+    /**
+     * Lista todas las clases ordenadas por nombre y las convierte sin fecha solicitada.
+     * No materializa ocurrencias en esta consulta de solo lectura.
+     */
     @Transactional(readOnly = true)
     public List<ClassView> all() {
         return classes.findAllByOrderByNameAsc().stream().map(c -> view(c, null)).toList();
     }
 
+    /**
+     * Resuelve el rol actual: ADMIN recibe todas las clases y JEFE solo las creadas por él.
+     * Rechaza otros roles o un actor que no pueda resolverse en la base.
+     */
     @Transactional(readOnly = true)
     public List<ClassView> managedBy(Authentication authentication) {
         Role role = roleAccess.roleFor(authentication);
@@ -97,6 +120,11 @@ public class ClassService {
                 .toList();
     }
 
+    /**
+     * Comprueba rol y UUID del creador y resuelve el docente asignado.
+     * Valida nombre, horario, campus y módulos antes de guardar la clase.
+     * Persiste la clase y su horario en una transacción y devuelve la vista recargada.
+     */
     @Transactional
     public ClassView create(ClassInput input, Authentication authentication) {
         Role role = roleAccess.roleFor(authentication);
@@ -125,6 +153,12 @@ public class ClassService {
         return view(classes.findWithModulesById(saved.getId()).orElseThrow(), null);
     }
 
+    /**
+     * Comprueba rol, existencia y alcance del JEFE antes de comparar versión esperada.
+     * Impide cambiar docente o campus cuando ya existen ocurrencias.
+     * Valida la nueva configuración, guarda clase y horario y reconcilia fechas sin asistencia.
+     * Devuelve la vista recargada o un error de conflicto o validación.
+     */
     @Transactional
     public ClassView update(
             UUID id, ClassInput input, long expectedVersion, Authentication authentication) {
@@ -150,6 +184,7 @@ public class ClassService {
                     "STALE_VERSION", "La clase cambió. Actualiza la página y vuelve a intentarlo.");
 
         UUID teacherId = resolveTeacherId(input);
+        // Las ocurrencias existentes preservan la asociación histórica de docente y campus.
         if ((!current.getTeacherId().equals(teacherId)
                         || !current.getCampusId().equals(input.campusId()))
                 && jdbc.queryForObject(
@@ -176,6 +211,10 @@ public class ClassService {
         return view(classes.findWithModulesById(saved.getId()).orElseThrow(), null);
     }
 
+    /**
+     * Acepta código o UUID de docente, pero no ambos a la vez.
+     * El código puede resolver o crear la identidad; falta de ambos produce error.
+     */
     private UUID resolveTeacherId(ClassInput input) {
         if (input == null)
             throw ApiException.badRequest("INVALID_CLASS", "Los datos de la clase son obligatorios.");
@@ -190,6 +229,11 @@ public class ClassService {
                 "TEACHER_REQUIRED", "Indica un docente existente o un código de siete dígitos.");
     }
 
+    /**
+     * Comprueba nombre, día e intervalo, y existencia de docente y campus.
+     * Deduplica identificadores y exige que todos correspondan a módulos del campus.
+     * Devuelve el conjunto de entidades o informa el dato inválido.
+     */
     private Set<Geofence> validate(ClassInput i, UUID teacherId) {
         if (i.name() == null || i.name().isBlank() || i.name().length() > 120)
             throw ApiException.badRequest(
@@ -224,6 +268,12 @@ public class ClassService {
         return new LinkedHashSet<>(found);
     }
 
+    /**
+     * Construye una vista de la clase y su horario, admitiendo ausencia de horario.
+     * Con fecha coincidente y clase activa calcula instantes en la zona configurada.
+     * Inserta la ocurrencia si falta con ON CONFLICT y recupera la fila efectiva.
+     * Solo expone esa ocurrencia si conserva el mismo docente asignado.
+     */
     private ClassView view(TeachingClass c, LocalDate date) {
         ClassSchedule schedule = schedules.findById(c.getId()).orElse(null);
         if (schedule == null)
@@ -255,6 +305,7 @@ public class ClassService {
                             localEnd.atZone(policy.timeZone())
                                     .toInstant()
                                     .truncatedTo(ChronoUnit.MICROS);
+            // ON CONFLICT permite que solicitudes concurrentes compartan la ocurrencia existente.
             UUID generated = UUID.randomUUID();
             jdbc.update(
                     "insert into class_occurrences(id,class_id,teacher_id,class_date,start_at,end_at) values (?,?,?,?,?,?) on conflict(class_id,class_date) do nothing",
@@ -287,10 +338,19 @@ public class ClassService {
                 occurrence);
     }
 
+    /**
+     * Extrae los UUID de los módulos asignados y los ordena.
+     * La lista es una representación estable para la vista de clase.
+     */
     private List<UUID> moduleIds(TeachingClass c) {
         return c.getAllowedModules().stream().map(Geofence::getId).sorted().toList();
     }
 
+    /**
+     * Busca desde hoy las ocurrencias de la clase que no tienen asistencia.
+     * Actualiza horario y docente si el día sigue coincidiendo; elimina las demás.
+     * Las ocurrencias con asistencia quedan fuera de la consulta y de la eliminación.
+     */
     private void reconcileUnregisteredOccurrences(
             UUID classId, ClassInput input, UUID teacherId) {
         LocalDate today = LocalDate.now(policy.timeZone());
@@ -300,6 +360,7 @@ public class ClassService {
                         (rs, row) -> rs.getObject(1, LocalDate.class),
                         classId,
                         today);
+        // Solo se ajustan fechas sin asistencia; las demás conservan su evidencia histórica.
         for (LocalDate date : dates) {
             if (date.getDayOfWeek().getValue() == input.dayOfWeek()) {
                 Instant start =

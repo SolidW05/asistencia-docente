@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 
+/** Entidad de la asignación de clase, docente y campus. */
 @Entity
 @Table(name = "teaching_classes")
 public class TeachingClass {

@@ -22,6 +22,10 @@ import mx.udg.cut.asistencia.dto.chain.VerifyView;
 import mx.udg.cut.asistencia.models.chain.ChainDefinition;
 import mx.udg.cut.asistencia.utils.CanonicalJson;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.DynamicTest;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -100,6 +104,47 @@ class ChainServiceVerificationTest {
         assertFalse(tampered.valid());
         assertEquals(3, tampered.checkedBlocks());
         assertTrue(tampered.firstError().contains("hash"));
+    }
+
+    /** Cada caso modifica una sola evidencia y comprueba el primer fallo comunicado. */
+    @TestFactory
+    Stream<DynamicTest> detectsChangesToBlocksAndHead() {
+        record Case(String name, Consumer<MemoryChainJdbc> mutate, String error, int checked) {}
+        List<Case> cases = List.of(
+                new Case("identificador", j -> j.blocks.get(1).put("id", UUID.randomUUID()), "hash no coincide", 2),
+                new Case("fecha", j -> j.blocks.get(1).put("server_at", Timestamp.from(RECEIVED_AT.plusSeconds(1))), "hash no coincide", 2),
+                new Case("contenido", j -> j.blocks.get(1).put("payload", "{\"status\":\"CONFIRMED\"}"), "hash no coincide", 2),
+                new Case("hash", j -> j.blocks.get(1).put("hash", "0".repeat(64)), "hash no coincide", 2),
+                new Case("enlace", j -> j.blocks.get(1).put("previous_hash", "0".repeat(64)), "enlace anterior", 2),
+                new Case("índice", j -> j.blocks.get(1).put("block_index", 2L), "Índice inesperado", 2),
+                new Case("cabecera", j -> j.head.put("last_hash", "0".repeat(64)), "cabecera global", 2),
+                new Case("cabecera ausente", j -> j.head = null, "Falta la cabecera", 2),
+                new Case("génesis alterado", j -> j.blocks.get(0).put("hash", "0".repeat(64)), "hash SHA-256", 1),
+                new Case("cadena vacía", j -> j.blocks.clear(), "Falta el bloque génesis", 0),
+                new Case("JSON malformado", j -> j.blocks.get(1).put("payload", "{"), "no puede interpretarse", 2),
+                new Case("snapshot inicial", j -> j.attendances.get(ATTENDANCE_ID).put("chain_payload", "{}"), "snapshot inicial", 2),
+                new Case("estado actual", j -> j.attendances.get(ATTENDANCE_ID).put("status", "CONFIRMED"), "estado actual", 2),
+                new Case("datos de asistencia", j -> j.attendances.get(ATTENDANCE_ID).put("reason", "cambiado"), "fueron alterados", 2));
+        return cases.stream().map(c -> DynamicTest.dynamicTest(c.name(), () -> {
+            MemoryChainJdbc jdbc = validChain();
+            c.mutate().accept(jdbc);
+            VerifyView result = new ChainService(jdbc, json).verify(OWNER_ID);
+            assertFalse(result.valid(), c.name());
+            assertEquals(c.checked(), result.checkedBlocks(), c.name());
+            assertTrue(result.firstError().contains(c.error()), result.firstError());
+        }));
+    }
+
+    private MemoryChainJdbc validChain() {
+        MemoryChainJdbc jdbc = new MemoryChainJdbc();
+        String payload = json.write(attendancePayload());
+        jdbc.attendances.put(ATTENDANCE_ID, attendanceRow("PENDING_REVIEW", payload));
+        jdbc.blocks.add(genesisBlock());
+        jdbc.blocks.add(block(1, "ATTENDANCE_RECORDED",
+                UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), RECEIVED_AT, payload,
+                ChainDefinition.GENESIS_HASH));
+        jdbc.updateHead();
+        return jdbc;
     }
 
     private Map<String, Object> attendancePayload() {

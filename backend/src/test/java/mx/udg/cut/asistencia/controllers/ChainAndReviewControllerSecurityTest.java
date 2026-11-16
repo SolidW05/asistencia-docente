@@ -31,6 +31,7 @@ import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import mx.udg.cut.asistencia.services.attendance.AttendanceService;
 import mx.udg.cut.asistencia.services.auth.RoleAccessService;
 import mx.udg.cut.asistencia.services.chain.ChainService;
+import mx.udg.cut.asistencia.services.chain.ChainAttackService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -46,6 +47,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class ChainAndReviewControllerSecurityTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private ChainService chainService;
+    @MockBean private ChainAttackService chainAttackService;
     @MockBean private AttendanceService attendanceService;
     @MockBean private TeacherRepository teacherRepository;
 
@@ -73,6 +75,23 @@ class ChainAndReviewControllerSecurityTest {
 
         verify(chainService, never()).chain(any(UUID.class));
         verify(chainService, never()).verify(any(UUID.class));
+    }
+
+    @Test
+    void attackRequiresAdminAndCsrf() throws Exception {
+        when(teacherRepository.findByCode("1111111"))
+                .thenReturn(Optional.of(new Teacher(teacherId, "1111111", "Docente", Role.TEACHER)));
+        when(teacherRepository.findByCode("3333333"))
+                .thenReturn(Optional.of(new Teacher(adminId, "3333333", "Admin", Role.ADMIN)));
+        var teacher = auth(teacherId, "1111111", Role.TEACHER);
+        var admin = auth(adminId, "3333333", Role.ADMIN);
+        mockMvc.perform(post("/api/chain/attack/" + attendanceId).with(authentication(teacher)).with(csrf()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/chain/attack/" + attendanceId).with(authentication(admin)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/chain/attack/" + attendanceId).with(authentication(admin)).with(csrf()))
+                .andExpect(status().isOk());
+        verify(chainAttackService).attack(attendanceId);
     }
 
     @Test

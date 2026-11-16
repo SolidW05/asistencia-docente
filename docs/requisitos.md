@@ -21,7 +21,7 @@ Solo ADMIN puede consultar todos los bloques, sus datos y verificar la cadena co
 
 ## Configuración, identidad y datos
 
-Se conserva la organización backend por capas y DTO públicos separados. La sesión HTTP determina identidad; se mantienen CSRF, cookies HttpOnly/SameSite y protección de rutas. Otro perfil sin proveedor real falla explícitamente. El código docente usa siete dígitos como String; la contraseña demo no se valida ni se guarda.
+Se conserva la organización backend por capas y DTO públicos separados. La sesión HTTP determina identidad; se mantienen CSRF, cookies HttpOnly/SameSite y protección de rutas. Otro perfil sin proveedor real falla explícitamente. El código docente usa siete dígitos como String. El campo de contraseña permanece visible, editable y opcional; durante la simulación acepta cualquier texto sin validarlo, almacenarlo ni registrarlo.
 
 Una base nueva contiene solo génesis y cabecera, sin cuentas ni clases de ejemplo. El esquema consolidado sigue en `schema.sql`; no se introduce Flyway. La actualización de esta entrega se aplica antes de Hibernate bajo bloqueo transaccional, conserva datos/bloques y agrega permisos de creador y soporte para varios eventos por asistencia. No reiniciar ni borrar el volumen para actualizar.
 

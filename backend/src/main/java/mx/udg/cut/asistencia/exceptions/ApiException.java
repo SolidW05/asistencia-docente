@@ -2,6 +2,7 @@ package mx.udg.cut.asistencia.exceptions;
 
 import org.springframework.http.HttpStatus;
 
+/** Transporta estado HTTP, código estable y mensaje de un error de negocio. */
 public class ApiException extends RuntimeException {
     private final HttpStatus status;
     private final String code;

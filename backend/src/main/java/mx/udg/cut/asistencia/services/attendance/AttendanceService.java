@@ -52,6 +52,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 
+/**
+ * Coordina evaluación y registro de asistencia de una ocurrencia docente.
+ * Combina política temporal, ubicación, geocercas y justificaciones en el servidor.
+ * Una escritura transaccional conserva snapshots y agrega evidencia a la cadena.
+ * Las consultas y revisiones aplican el alcance del actor y la idempotencia.
+ */
 @Service
 public class AttendanceService {
     private final AttendanceRepository attendances;
@@ -70,6 +76,11 @@ public class AttendanceService {
     private final ChainService chainService;
     private final ClassScopeService classScope;
 
+    /**
+     * Recibe repositorios de asistencia, clases, horarios, campus, docentes y geocercas.
+     * También recibe servicios espacial y de cadena, JDBC, JSON, política y reloj.
+     * Con ellos coordina evaluación, autorización, snapshots y escrituras transaccionales.
+     */
     public AttendanceService(
             AttendanceRepository attendances,
             ClassOccurrenceRepository occurrences,
@@ -103,6 +114,10 @@ public class AttendanceService {
         this.classScope = classScope;
     }
 
+    /**
+     * Evalúa ocurrencia, ubicación y hora actual sin persistir asistencia.
+     * Usa una instantánea repetible y devuelve los resultados y requisitos de justificación.
+     */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CheckResponse check(UUID teacherId, CheckInput request) {
         return evaluate(teacherId, request, clock.instant()).response();
@@ -111,6 +126,13 @@ public class AttendanceService {
     // READ_COMMITTED es necesario aquí: después del bloqueo del docente, cada consulta debe ver
     // el registro/cabeza que confirmó la transacción anterior antes de calcular el siguiente
     // índice.
+    /**
+     * Bloquea al docente y compara la huella con una solicitud previa de la misma clave.
+     * Un reintento idéntico devuelve el registro; una clave reutilizada con cambios falla.
+     * Impide duplicar docente y ocurrencia, evalúa ubicación y horario y exige justificación cuando procede.
+     * Conserva snapshots y payload y guarda asistencia y bloque en la misma transacción.
+     * READ_COMMITTED permite observar el estado confirmado tras esperar los bloqueos.
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttendanceView register(UUID teacherId, UUID idempotencyKey, RegisterInput request) {
         Teacher teacher =
@@ -125,6 +147,7 @@ public class AttendanceService {
                     "INVALID_LOCATION",
                     "Cuando reportes una incidencia de ubicación, envía location como null.");
         String fingerprint = fingerprint(request);
+        // La clave identifica el intento; la huella impide reutilizarla con datos distintos.
         var previous = attendances.findByTeacherIdAndIdempotencyKey(teacherId, idempotencyKey);
         if (previous.isPresent()) {
             AttendanceRecord record = previous.get();
@@ -140,6 +163,7 @@ public class AttendanceService {
             throw ApiException.conflict(
                     "ATTENDANCE_ALREADY_EXISTS",
                     "Ya existe un registro para esta ocurrencia de clase.");
+        // El servidor fija la fecha de recepción con la precisión que conserva PostgreSQL.
         Instant receivedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
         CheckInput checkInput =
                 new CheckInput(request.occurrenceId(), request.location(), request.locationIssue());
@@ -155,6 +179,7 @@ public class AttendanceService {
                 request.location() == null || request.locationIssue() != null
                         ? null
                         : json.write(locationMap(request.location()));
+        // La configuración y el payload capturan la evidencia antes de insertar la asistencia.
         String configuration = json.write(configurationSnapshot(evaluation));
         String payload =
                 json.write(
@@ -187,11 +212,16 @@ public class AttendanceService {
                 idempotencyKey,
                 fingerprint,
                 payload);
+        // El bloque y la asistencia comparten transacción: si falla el encadenamiento se revierten ambos.
         chain.append(teacherId, attendanceId, receivedAt, payload);
         AttendanceRecord record = attendances.findById(attendanceId).orElseThrow();
         return view(record);
     }
 
+    /**
+     * Lista las asistencias del docente desde la más reciente y convierte cada fila en vista.
+     * No incluye registros de otros docentes.
+     */
     @Transactional(readOnly = true)
     public List<AttendanceView> history(UUID teacherId) {
         return attendances.findByTeacherIdOrderByReceivedAtDesc(teacherId).stream()
@@ -199,6 +229,10 @@ public class AttendanceService {
                 .toList();
     }
 
+    /**
+     * Busca por docente y clave idempotente una solicitud ya persistida.
+     * Devuelve la vista correspondiente o un error si esa combinación no existe.
+     */
     @Transactional(readOnly = true)
     public AttendanceView request(UUID teacherId, UUID key) {
         AttendanceRecord record =
@@ -212,6 +246,11 @@ public class AttendanceService {
         return view(record);
     }
 
+    /**
+     * Resuelve al actor y selecciona todas las asistencias para ADMIN.
+     * Para JEFE limita la consulta a clases creadas por el actor; rechaza otros roles.
+     * Convierte los resultados en vistas con datos históricos del payload.
+     */
     @Transactional(readOnly = true)
     public List<AdminAttendanceView> adminHistory(UUID actorId) {
         Teacher actor =
@@ -234,6 +273,12 @@ public class AttendanceService {
         return records.stream().map(this::adminView).toList();
     }
 
+    /**
+     * Exige confirmación y comentario no vacío, y localiza al propietario de la asistencia.
+     * Bloquea al docente, comprueba la clase y el alcance del actor, y valida su rol actual.
+     * Una asistencia que ya no está pendiente se devuelve sin agregar otro evento.
+     * La transición a confirmada y el evento de revisión se guardan en la misma transacción.
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttendanceView review(
             Authentication authentication,
@@ -248,6 +293,7 @@ public class AttendanceService {
             throw ApiException.badRequest(
                     "REVIEW_COMMENT_REQUIRED", "Escribe un comentario para confirmar la asistencia.");
 
+        // Primero se resuelve y bloquea al propietario; después se comprueba el alcance del revisor.
         UUID ownerId =
                 attendances
                         .findTeacherIdById(attendanceId)
@@ -292,6 +338,7 @@ public class AttendanceService {
             throw ApiException.forbidden(
                     "ATTENDANCE_REVIEW_FORBIDDEN", "No tienes permiso para revisar asistencias.");
 
+        // Una revisión repetida no debe producir otra transición ni otro bloque.
         if (record.getStatus() != AttendanceStatus.PENDING_REVIEW)
             return view(record);
 
@@ -317,6 +364,10 @@ public class AttendanceService {
         return view(record);
     }
 
+    /**
+     * Comprueba que la asistencia pertenezca al docente antes de consultar su historia.
+     * Delega a la cadena la reconstrucción de eventos y rechaza una asistencia ajena o ausente.
+     */
     @Transactional(readOnly = true)
     public List<AttendanceHistoryView> history(UUID teacherId, UUID attendanceId) {
         attendances
@@ -329,6 +380,10 @@ public class AttendanceService {
         return chainService.history(attendanceId);
     }
 
+    /**
+     * Interpreta el payload inicial y la ubicación almacenados para construir la vista administrativa.
+     * Usa nombres históricos y convierte el identificador de clase cuando está disponible.
+     */
     private AdminAttendanceView adminView(AttendanceRecord record) {
         JsonNode payload = json.read(record.getChainPayload());
         JsonNode location = record.getLocation() == null ? null : json.read(record.getLocation());
@@ -353,10 +408,22 @@ public class AttendanceService {
                 location);
     }
 
+    /**
+     * Convierte texto no vacío en UUID y conserva valores ausentes como null.
+     * Un texto no vacío con formato inválido propaga el error de conversión.
+     */
     private UUID nullableUuid(String value) {
         return value == null || value.isBlank() ? null : UUID.fromString(value);
     }
 
+    /**
+     * Comprueba que ocurrencia y clase pertenezcan al docente y carga configuración asociada.
+     * Filtra módulos activos, del campus y con la geocerca principal como padre.
+     * Calcula tiempo y clasifica configuración, ausencia, antigüedad y precisión de ubicación.
+     * Si la precisión alcanza una frontera marca incertidumbre; después comprueba campus y módulos.
+     * Cualquier resultado espacial distinto de módulo permitido o tiempo fuera de ventana requiere revisión.
+     * Devuelve evaluación y objetos necesarios para construir evidencia, sin persistir.
+     */
     private Evaluation evaluate(UUID teacherId, CheckInput input, Instant now) {
         ClassOccurrence occurrence =
                 occurrences
@@ -382,6 +449,7 @@ public class AttendanceService {
                 geofences
                         .findFirstByCampusIdAndType(assignment.getCampusId(), GeofenceType.CAMPUS)
                         .orElse(null);
+        // Solo módulos activos y coherentes con el campus participan en la decisión espacial.
         List<Geofence> configuredModules =
                 assignment.getAllowedModules().stream()
                         .filter(Geofence::isActive)
@@ -400,6 +468,7 @@ public class AttendanceService {
                         && campusFence.isActive()
                         && !configuredModules.isEmpty()
                         && schedule != null;
+        // La ventana temporal es independiente de la clasificación espacial.
         TemporalResult temporal = temporalResult(occurrence, now);
         SpatialResult result;
         UUID matchedModule = null;
@@ -409,6 +478,7 @@ public class AttendanceService {
             result = SpatialResult.NO_LOCATION;
         } else {
             LocationInput location = input.location();
+            // Primero se descartan lecturas antiguas o imprecisas, antes de consultar geometrías.
             long ageMillis = Duration.between(location.capturedAt(), now).toMillis();
             if (ageMillis < -5_000 || ageMillis > policy.maxAgeSeconds() * 1_000L)
                 result = SpatialResult.STALE;
@@ -422,6 +492,7 @@ public class AttendanceService {
                                 allowedIds,
                                 location.longitude().doubleValue(),
                                 location.latitude().doubleValue());
+                // Si el radio de precisión alcanza una frontera, no se afirma pertenencia.
                 if (location.accuracyMeters().signum() > 0
                         && distance <= location.accuracyMeters().doubleValue())
                     result = SpatialResult.UNCERTAIN;
@@ -450,6 +521,7 @@ public class AttendanceService {
                 }
             }
         }
+        // Solo módulo permitido y horario válido confirman automáticamente la asistencia.
         boolean requires =
                 result != SpatialResult.ALLOWED_MODULE || temporal != TemporalResult.IN_WINDOW;
         AttendanceStatus status =
@@ -469,6 +541,10 @@ public class AttendanceService {
                 matchedModule);
     }
 
+    /**
+     * Forma una ventana inclusiva desde inicio menos anticipación hasta fin más tolerancia.
+     * Compara la hora del servidor y devuelve dentro o fuera de esa ventana.
+     */
     private TemporalResult temporalResult(ClassOccurrence occurrence, Instant now) {
         Instant first = occurrence.getStartAt().minus(policy.earlyMinutes(), ChronoUnit.MINUTES);
         Instant last = occurrence.getEndAt().plus(policy.lateMinutes(), ChronoUnit.MINUTES);
@@ -477,6 +553,10 @@ public class AttendanceService {
                 : TemporalResult.OUTSIDE_WINDOW;
     }
 
+    /**
+     * Traduce el resultado espacial a un mensaje para el usuario.
+     * Para ausencia de ubicación distingue las incidencias conocidas del dispositivo.
+     */
     private String message(SpatialResult r, LocationIssue issue) {
         return switch (r) {
             case ALLOWED_MODULE -> "La ubicación está dentro de un módulo permitido.";
@@ -501,6 +581,11 @@ public class AttendanceService {
         };
     }
 
+    /**
+     * Reúne versiones de clase, campus y geocerca junto con la política aplicada.
+     * Incluye todos los módulos asignados ordenados por UUID, no solo los activos evaluados.
+     * Conserva además el módulo coincidente para permitir comprobaciones posteriores.
+     */
     private Map<String, Object> configurationSnapshot(Evaluation e) {
         Map<String, Object> snapshot = new TreeMap<>();
         snapshot.put("classId", e.assignment().getId());
@@ -511,6 +596,7 @@ public class AttendanceService {
         snapshot.put(
                 "campusGeofence",
                 e.campusFence() == null ? null : geofenceSnapshot(e.campusFence()));
+        // El snapshot conserva todos los módulos asignados, ordenados, incluso si no fueron evaluados.
         snapshot.put(
                 "allowedModules",
                 e.assignment().getAllowedModules().stream()
@@ -526,6 +612,10 @@ public class AttendanceService {
         return snapshot;
     }
 
+    /**
+     * Copia identidad, versión, jerarquía, actividad y geometría de una geocerca.
+     * Interpreta el JSON geométrico para incluirlo como estructura en la evidencia.
+     */
     private Map<String, Object> geofenceSnapshot(Geofence g) {
         Map<String, Object> ref = new TreeMap<>();
         ref.put("id", g.getId());
@@ -539,6 +629,11 @@ public class AttendanceService {
         return ref;
     }
 
+    /**
+     * Reúne identidad, clase, ocurrencia, ubicación, resultados y justificación del registro.
+     * Incluye el snapshot de configuración y la fecha de recepción del servidor.
+     * El mapa resultante se serializa canónicamente antes de sellar el bloque.
+     */
     private Map<String, Object> chainPayload(
             Teacher teacher,
             Evaluation e,
@@ -573,6 +668,10 @@ public class AttendanceService {
         return p;
     }
 
+    /**
+     * Construye una representación canónica de ocurrencia, ubicación e información declarada.
+     * Calcula SHA-256 para detectar el uso de una misma clave con contenido diferente.
+     */
     private String fingerprint(RegisterInput r) {
         Map<String, Object> value = new TreeMap<>();
         value.put("occurrenceId", r.occurrenceId());
@@ -583,6 +682,10 @@ public class AttendanceService {
         return json.sha256(json.write(value));
     }
 
+    /**
+     * Convierte la ubicación en un mapa de coordenadas, precisión y fecha de captura.
+     * Devuelve null si no se proporcionó ubicación.
+     */
     private Map<String, Object> locationMap(LocationInput p) {
         if (p == null)
             return null;
@@ -594,6 +697,10 @@ public class AttendanceService {
         return location;
     }
 
+    /**
+     * Construye la vista docente con datos persistidos y nombre histórico del payload inicial.
+     * Interpreta la ubicación JSON cuando existe.
+     */
     private AttendanceView view(AttendanceRecord record) {
         String historicalName =
                 json.read(record.getChainPayload()).path("className").asText("Clase no disponible");
@@ -611,14 +718,26 @@ public class AttendanceService {
                 location);
     }
 
+    /**
+     * Determina si un texto es nulo o contiene solo espacios.
+     * Se usa al comprobar campos obligatorios para revisión.
+     */
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
 
+    /**
+     * Normaliza texto ausente o en blanco a null.
+     * Conserva el contenido no vacío para su persistencia.
+     */
     private String emptyToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    /**
+     * Agrupa respuesta, entidades y módulos utilizados durante la evaluación.
+     * Permite construir la evidencia posterior sin repetir las consultas.
+     */
     private record Evaluation(
             CheckResponse response,
             ClassOccurrence occurrence,

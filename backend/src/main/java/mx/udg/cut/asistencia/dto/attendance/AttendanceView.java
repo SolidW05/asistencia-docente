@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.UUID;
 
+/** Representa una asistencia visible para el docente, con resultado y ubicación. */
 public record AttendanceView(
         UUID id,
         String className,

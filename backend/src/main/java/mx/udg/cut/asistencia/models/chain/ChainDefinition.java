@@ -2,7 +2,7 @@ package mx.udg.cut.asistencia.models.chain;
 
 import java.util.UUID;
 
-/** La cadena comienza con un único Génesis, antes de registrar cualquier asistencia. */
+/** El génesis es el ancla inicial que proporciona el hash anterior al primer registro. */
 public final class ChainDefinition {
     public static final String CHAIN_ID = "GLOBAL_ATTENDANCE";
     public static final UUID GENESIS_BLOCK_ID =

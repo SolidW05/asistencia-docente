@@ -20,7 +20,7 @@ Spring crea estos objetos e inyecta dependencias mediante constructores. `@Trans
 
 ## Autenticación y sesión
 
-`IdentityProvider` encapsula el proveedor; `DemoIdentityProvider` existe únicamente en perfil `demo`. El código debe tener exactamente siete dígitos y se conserva como String. La contraseña se ignora: no se almacena ni se registra. No hay identidades precargadas. El login crea una identidad local si falta. ADMIN también puede crear o promover un JEFE por código, y una clase puede precrear al docente asignado. El rol JEFE se conserva al iniciar sesión. Ninguna de estas altas crea asistencias. Los códigos principales siguen definidos mediante DEMO_ADMIN_CODES.
+`IdentityProvider` encapsula el proveedor; `DemoIdentityProvider` existe únicamente en perfil `demo`. El código debe tener exactamente siete dígitos y se conserva como String. La contraseña es opcional y se ignora durante la simulación: no se valida, almacena ni registra. El formulario conserva el campo editable para una futura integración con un proveedor real. No hay identidades precargadas. El login crea una identidad local si falta. ADMIN también puede crear o promover un JEFE por código, y una clase puede precrear al docente asignado. El rol JEFE se conserva al iniciar sesión. Ninguna de estas altas crea asistencias. Los códigos principales siguen definidos mediante DEMO_ADMIN_CODES.
 
 El backend crea y guarda un `SecurityContext` en la sesión HTTP. Cambia el identificador de sesión al autenticar para evitar fijación de sesión. La cookie de sesión es HttpOnly, SameSite=Lax y configurable como Secure para HTTPS. El cliente usa `credentials: same-origin`; no mantiene una identidad autorizadora en un campo oculto del formulario.
 
@@ -49,3 +49,11 @@ El inicializador también aplica una actualización idempotente para conservar d
 Las pruebas unitarias y de autorización están en src/test/java. Usan dobles de repositorios y no modifican la base del usuario. La evidencia de ejecución y los límites del entorno se registran en [cambios-roles-revision.md](cambios-roles-revision.md).
 
 Surefire precarga Mockito como javaagent únicamente durante tests. Esto permite ejecutar la suite con Java 25 sin intentar adjuntar instrumentación en ejecución. La versión procede del BOM de Spring Boot y no modifica el arranque de producción.
+
+## Encadenamiento y demostración académica
+
+La [guía del backend](guia-backend.md) sigue una escritura desde HTTP hasta el commit y explica los campos que entran al hash. La [auditoría de la cadena](auditoria-cadena.md) relaciona requisitos, correcciones y comprobaciones ejecutadas.
+
+`ChainAttackService` añade una marca al payload de un bloque persistido sin actualizar su hash; conserva un respaldo para restaurarlo explícitamente. El servicio exige perfil demo y `app.chain-attack-enabled=true`, configurable con `APP_CHAIN_ATTACK_ENABLED`. El controlador exige ADMIN y las escrituras conservan CSRF. El respaldo se crea mediante una actualización idempotente del esquema y persiste después de reiniciar.
+
+Antes de insertar un evento, `ChainAppendService` comprueba la evidencia criptográfica existente bajo el bloqueo de cabecera. Si detecta corrupción devuelve conflicto y revierte la operación. Esta comprobación no compara las asistencias en curso de escritura; `ChainService.verify` realiza la comprobación completa después del commit.

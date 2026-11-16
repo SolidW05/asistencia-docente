@@ -45,6 +45,11 @@ public class DatabaseInitializationConfig {
     }
 
     private void upgradeExistingSchema(JdbcTemplate jdbc) {
+        // Respaldo independiente para revertir la demostración sin recalcular hashes.
+        jdbc.execute(
+                "create table if not exists chain_attack_backup ("
+                        + "block_id uuid primary key references global_chain_blocks(id), "
+                        + "original_payload text not null, altered_payload text not null)");
         jdbc.execute("alter table teachers drop constraint if exists teachers_role_check");
         jdbc.execute(
                 "alter table teachers add constraint teachers_role_check "

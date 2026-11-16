@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
+/** Recibe los cambios de geocerca y la versión esperada para evitar sobrescrituras. */
 public record GeofenceUpdateRequest(
         @NotNull
         UUID campusId,

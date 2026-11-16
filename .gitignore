@@ -8,3 +8,11 @@ target/
 *.log
 *.tsbuildinfo
 .DS_Store
+qa_software/
+.task_lib/
+.codex/
+.task_docs/
+documento/
+evidencias_software/
+scripts/
+tmp_helpers/
