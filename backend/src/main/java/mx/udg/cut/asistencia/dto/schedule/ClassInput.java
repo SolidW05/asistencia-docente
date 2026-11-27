@@ -10,9 +10,7 @@ public record ClassInput(
         String teacherCode,
         UUID campusId,
         List<UUID> allowedModuleIds,
-        int dayOfWeek,
-        java.time.LocalTime startTime,
-        java.time.LocalTime endTime,
+        List<ScheduleSlot> schedules,
         boolean active
 ) {
 }

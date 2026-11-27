@@ -44,15 +44,19 @@ export interface Occurrence {
   endAt: string
 }
 
+export interface ClassScheduleSlot {
+  dayOfWeek: number
+  startTime: string
+  endTime: string
+}
+
 export interface ClassAssignment {
   id: string
   name: string
   teacherId: string
   campusId: string
   allowedModuleIds: string[]
-  dayOfWeek: number
-  startTime: string
-  endTime: string
+  schedules: ClassScheduleSlot[]
   active: boolean
   version: number
   occurrence: Occurrence | null

@@ -19,12 +19,12 @@ Prototipo local. Todos los identificadores son UUID en cadenas. API JSON bajo `/
 - GET `/geofences` devuelve `[{id,campusId,name,type,parentId,geometry,active,version}]`; type es CAMPUS/MODULE y geometry es GeoJSON Polygon.
 - POST/PUT `/admin/campuses[/{id}]`, solo ADMIN, recibe `{name,active}`.
 - POST/PUT `/admin/geofences[/{id}]`, solo ADMIN, recibe `{campusId,name,type,parentId,geometry,active}` y al editar también `version`.
-- GET `/classes?date=YYYY-MM-DD` devuelve clases propias con ocurrencia de esa fecha: `[{id,name,teacherId,campusId,allowedModuleIds,dayOfWeek,startTime,endTime,active,version,occurrence:{id,date,startAt,endAt}}]`. Si no aplica ese día, occurrence es null.
+- GET `/classes?date=YYYY-MM-DD` devuelve clases propias con `schedules: [{dayOfWeek,startTime,endTime}]` y la ocurrencia de la fecha solicitada en `occurrence: {id,date,startAt,endAt}`. Cuando la clase está inactiva o ese día no está programado, `occurrence` es null.
 - GET `/admin/classes`, ADMIN o JEFE, devuelve clases de su alcance, sin ocurrencia.
-- POST `/admin/classes` recibe `{name,teacherId,campusId,allowedModuleIds,dayOfWeek,startTime,endTime,active}`. Como alternativa a `teacherId`, acepta `teacherCode` de siete dígitos y crea el docente si falta. Se envía solo una de las dos referencias.
+- POST `/admin/classes` recibe `{name,teacherId,campusId,allowedModuleIds,schedules,active}`. Como alternativa a `teacherId`, acepta `teacherCode` de siete dígitos y crea el docente si falta. Se envía solo una de las dos referencias.
 - PUT `/admin/classes/{id}` recibe el mismo cuerpo y `version`; exige autorización sobre la clase y conserva al creador original.
 
-El día usa 1=lunes y 7=domingo. Los horarios no cruzan medianoche. No se reasignan docente/campus cuando ya existen ocurrencias. Cambiar un horario solo reconcilia ocurrencias actuales o futuras sin asistencia. Una cuenta nueva no recibe clases inventadas.
+Cada clase admite una franja por día, de 1 (lunes) a 7 (domingo). La hora de inicio debe preceder a la de fin en el mismo día. Las solicitudes anteriores pueden seguir enviando una sola franja con los campos `dayOfWeek`, `startTime` y `endTime` en la raíz. Las respuestas conservan esos campos con la franja de la fecha solicitada o la primera franja semanal. Cambiar los horarios reconcilia las ocurrencias actuales y futuras pendientes de asistencia. El docente y el campus solo pueden reasignarse antes de que existan ocurrencias.
 
 ## Registro de asistencia
 

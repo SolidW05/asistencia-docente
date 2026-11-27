@@ -18,10 +18,9 @@ public record CreateClassRequest(
         @NotNull
         UUID campusId,
         List<UUID> allowedModuleIds,
-        int dayOfWeek,
-        @NotNull
+        List<ScheduleSlot> schedules,
+        Integer dayOfWeek,
         LocalTime startTime,
-        @NotNull
         LocalTime endTime,
         boolean active
 ) {
@@ -32,9 +31,7 @@ public record CreateClassRequest(
                 teacherCode,
                 campusId,
                 allowedModuleIds,
-                dayOfWeek,
-                startTime,
-                endTime,
+                schedules == null ? List.of(new ScheduleSlot(dayOfWeek, startTime, endTime)) : schedules,
                 active);
     }
 }

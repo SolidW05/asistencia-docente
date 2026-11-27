@@ -12,16 +12,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import mx.udg.cut.asistencia.config.AppPolicy;
 import mx.udg.cut.asistencia.dto.schedule.ClassInput;
+import mx.udg.cut.asistencia.dto.schedule.ScheduleSlot;
 import mx.udg.cut.asistencia.exceptions.ApiException;
 import mx.udg.cut.asistencia.models.schedule.TeachingClass;
 import mx.udg.cut.asistencia.models.teacher.Role;
 import mx.udg.cut.asistencia.repositories.campus.CampusRepository;
 import mx.udg.cut.asistencia.repositories.geofence.GeofenceRepository;
 import mx.udg.cut.asistencia.repositories.schedule.ClassOccurrenceRepository;
-import mx.udg.cut.asistencia.repositories.schedule.ClassScheduleRepository;
 import mx.udg.cut.asistencia.repositories.schedule.TeachingClassRepository;
 import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import mx.udg.cut.asistencia.services.auth.RoleAccessService;
@@ -40,7 +39,6 @@ import org.springframework.security.core.Authentication;
 @ExtendWith(MockitoExtension.class)
 class ClassServiceRoleScopeTest {
     @Mock private TeachingClassRepository classes;
-    @Mock private ClassScheduleRepository schedules;
     @Mock private ClassOccurrenceRepository occurrences;
     @Mock private TeacherRepository teachers;
     @Mock private TeacherService teacherService;
@@ -58,7 +56,6 @@ class ClassServiceRoleScopeTest {
         classService =
                 new ClassService(
                         classes,
-                        schedules,
                         occurrences,
                         teachers,
                         teacherService,
@@ -93,7 +90,7 @@ class ClassServiceRoleScopeTest {
                 classId, "Clase ajena", UUID.randomUUID(), UUID.randomUUID(), true, Set.of(), otherOwnerId);
         when(roleAccess.roleFor(jefe)).thenReturn(Role.JEFE);
         when(roleAccess.teacherIdFor(jefe)).thenReturn(ownerId);
-        when(classes.findWithModulesById(classId)).thenReturn(Optional.of(foreignClass));
+        when(classes.findForUpdate(classId)).thenReturn(Optional.of(foreignClass));
 
         ApiException exception = assertThrows(
                 ApiException.class,
@@ -128,16 +125,8 @@ class ClassServiceRoleScopeTest {
         when(teachers.existsById(teacherId)).thenReturn(true);
         when(campuses.existsById(campusId)).thenReturn(true);
         when(geofences.findAllById(List.of())).thenReturn(List.of());
-        AtomicReference<TeachingClass> savedClass = new AtomicReference<>();
         when(classes.saveAndFlush(any(TeachingClass.class)))
-                .thenAnswer(
-                        invocation -> {
-                            TeachingClass saved = invocation.getArgument(0);
-                            savedClass.set(saved);
-                            return saved;
-                        });
-        when(classes.findWithModulesById(any(UUID.class)))
-                .thenAnswer(invocation -> Optional.of(savedClass.get()));
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         classService.create(
                 new ClassInput(
@@ -146,9 +135,7 @@ class ClassServiceRoleScopeTest {
                         null,
                         campusId,
                         List.of(),
-                        2,
-                        LocalTime.of(9, 0),
-                        LocalTime.of(10, 0),
+                        List.of(new ScheduleSlot(2, LocalTime.of(9, 0), LocalTime.of(10, 0))),
                         true),
                 jefe);
 

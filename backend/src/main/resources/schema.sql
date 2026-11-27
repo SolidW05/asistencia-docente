@@ -96,10 +96,11 @@ CREATE INDEX teaching_classes_created_by_idx
     ON teaching_classes (created_by, name);
 
 CREATE TABLE class_schedules (
-    class_id uuid PRIMARY KEY REFERENCES teaching_classes (id),
+    class_id uuid NOT NULL REFERENCES teaching_classes (id),
     day_of_week smallint NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
     start_time time NOT NULL,
     end_time time NOT NULL,
+    PRIMARY KEY (class_id, day_of_week),
     CHECK (start_time < end_time)
 );
 

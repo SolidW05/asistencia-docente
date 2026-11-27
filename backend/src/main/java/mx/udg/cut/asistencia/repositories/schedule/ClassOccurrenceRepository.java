@@ -1,11 +1,13 @@
 package mx.udg.cut.asistencia.repositories.schedule;
 
+import jakarta.persistence.LockModeType;
 import mx.udg.cut.asistencia.models.schedule.ClassOccurrence;
 
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 /**
  * Accede a sesiones concretas de una clase y su docente.
@@ -25,4 +27,8 @@ public interface ClassOccurrenceRepository extends JpaRepository<ClassOccurrence
      * El resultado vacío también cubre la ausencia de la ocurrencia.
      */
     Optional<ClassOccurrence> findByIdAndTeacherId(UUID id, UUID teacherId);
+
+    /** Conserva el intervalo de la ocurrencia mientras se registra la asistencia. */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    Optional<ClassOccurrence> findForRegistrationByIdAndTeacherId(UUID id, UUID teacherId);
 }

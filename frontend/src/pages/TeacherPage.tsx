@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Identity, AppConfig, AttendanceCheck, AttendancePayload, AttendanceRecord, Campus, ClassAssignment, Geofence, LocationIssue, Position } from '../types'
 import { api, ApiError } from '../api'
-import { formatCoordinates, formatDateTime, formatTime, isFreshPosition, issueLabel, mexicoDate, temporalLabel } from '../format'
+import { formatCoordinates, formatDateTime, formatOccurrenceTime, isFreshPosition, issueLabel, mexicoDate, temporalLabel } from '../format'
 import { MapView } from '../components/MapView'
 import { Notice } from '../components/Notice'
 import { Loading } from '../components/Loading'
@@ -287,10 +287,10 @@ export function TeacherPage({ identity }: TeacherPageProps) {
             <label className="field-label" htmlFor="class-select">Clase de hoy</label>
             <select id="class-select" value={selectedClassId} onChange={(event) => selectClass(event.target.value)} disabled={Boolean(attempt)}>
               <option value="">Selecciona una clase</option>
-              {classes.map((item) => <option key={item.id} value={item.id} disabled={!item.active || !item.occurrence}>{item.name}{item.occurrence ? ` · ${formatTime(item.startTime)}–${formatTime(item.endTime)}` : ' · sin ocurrencia hoy'}</option>)}
+              {classes.map((item) => <option key={item.id} value={item.id} disabled={!item.active || !item.occurrence}>{item.name}{item.occurrence ? ` · ${formatOccurrenceTime(item.occurrence, config?.timeZone)}` : ' · sin ocurrencia hoy'}</option>)}
             </select>
             {selectedClass?.occurrence ? <div className="class-summary">
-              <div className="summary-line"><span>Horario</span><strong>{formatTime(selectedClass.startTime)}–{formatTime(selectedClass.endTime)}</strong></div>
+              <div className="summary-line"><span>Horario</span><strong>{formatOccurrenceTime(selectedClass.occurrence, config?.timeZone)}</strong></div>
               <div className="summary-line"><span>Campus</span><strong>{selectedCampus?.name ?? 'No configurado'}</strong></div>
               <div className="summary-line summary-modules"><span>Módulos permitidos</span><strong>{allowedModules.length ? allowedModules.map((item) => item.name).join(', ') : 'Sin módulos asignados'}</strong></div>
             </div> : <p className="field-hint">{selectedClass ? 'Esta clase no tiene una ocurrencia para la fecha local de hoy.' : 'Elige una clase que tenga horario y ocurrencia.'}</p>}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
-import type { Identity, Campus, ClassAssignment, Geofence, PolygonGeometry, TeacherOption } from '../types'
+import type { Identity, Campus, ClassAssignment, ClassScheduleSlot, Geofence, PolygonGeometry, TeacherOption } from '../types'
 import { api, ApiError } from '../api'
 import { ErrorText, Notice } from '../components/Notice'
 import { Loading } from '../components/Loading'
@@ -9,11 +9,12 @@ import { MapView } from '../components/MapView'
 
 type CampusForm = { id: string | null; name: string; active: boolean }
 type FenceForm = { id: string | null; name: string; campusId: string; type: 'CAMPUS' | 'MODULE'; parentId: string; active: boolean; version?: number; geometry: PolygonGeometry | null }
-type ClassForm = { id: string | null; name: string; teacherId: string; teacherCode: string; campusId: string; allowedModuleIds: string[]; dayOfWeek: number; startTime: string; endTime: string; active: boolean; version?: number }
+type ClassForm = { id: string | null; name: string; teacherId: string; teacherCode: string; campusId: string; allowedModuleIds: string[]; schedules: ClassScheduleSlot[]; active: boolean; version?: number }
 
 const EMPTY_CAMPUS: CampusForm = { id: null, name: '', active: true }
 const EMPTY_FENCE: FenceForm = { id: null, name: '', campusId: '', type: 'CAMPUS', parentId: '', active: true, geometry: null }
-const EMPTY_CLASS: ClassForm = { id: null, name: '', teacherId: '', teacherCode: '', campusId: '', allowedModuleIds: [], dayOfWeek: 1, startTime: '08:00', endTime: '09:00', active: true }
+const DEFAULT_SLOT: ClassScheduleSlot = { dayOfWeek: 1, startTime: '08:00', endTime: '09:00' }
+const EMPTY_CLASS: ClassForm = { id: null, name: '', teacherId: '', teacherCode: '', campusId: '', allowedModuleIds: [], schedules: [DEFAULT_SLOT], active: true }
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
 export function AdminPage({ identity }: { identity: Identity }) {
@@ -91,9 +92,7 @@ export function AdminPage({ identity }: { identity: Identity }) {
       teacherCode: '',
       campusId: selectedClass.campusId,
       allowedModuleIds: selectedClass.allowedModuleIds,
-      dayOfWeek: selectedClass.dayOfWeek,
-      startTime: selectedClass.startTime,
-      endTime: selectedClass.endTime,
+      schedules: selectedClass.schedules,
       active: selectedClass.active,
       version: selectedClass.version,
     })
@@ -150,6 +149,7 @@ export function AdminPage({ identity }: { identity: Identity }) {
 
   async function saveClass(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (classForm.schedules.length === 0) { setClassError('Agrega al menos un horario.'); return }
     if (classForm.allowedModuleIds.length === 0) { setClassError('Asigna al menos un módulo permitido para la clase.'); return }
     setSavingClass(true)
     setClassError('')
@@ -160,17 +160,29 @@ export function AdminPage({ identity }: { identity: Identity }) {
         ...(classForm.teacherCode.trim() ? { teacherCode: classForm.teacherCode.trim() } : { teacherId: classForm.teacherId }),
         campusId: classForm.campusId,
         allowedModuleIds: classForm.allowedModuleIds,
-        dayOfWeek: classForm.dayOfWeek,
-        startTime: classForm.startTime,
-        endTime: classForm.endTime,
+        schedules: classForm.schedules,
         active: classForm.active,
         ...(classForm.id && classForm.version !== undefined ? { version: classForm.version } : {}),
       })
       await reload()
       setSelectedClassId(saved.id)
-      setNotice('Clase, horario y módulos permitidos guardados.')
+      setNotice('Clase, horarios y módulos permitidos guardados.')
     } catch (error) { setClassError(error instanceof Error ? error.message : 'No se pudo guardar la clase.') }
     finally { setSavingClass(false) }
+  }
+
+  function addSchedule() {
+    setClassForm((current) => {
+      const day = DAYS.findIndex((_, index) => !current.schedules.some((slot) => slot.dayOfWeek === index + 1)) + 1
+      return day === 0 ? current : { ...current, schedules: [...current.schedules, { ...DEFAULT_SLOT, dayOfWeek: day }] }
+    })
+  }
+
+  function updateSchedule(index: number, changes: Partial<ClassScheduleSlot>) {
+    setClassForm((current) => ({
+      ...current,
+      schedules: current.schedules.map((slot, position) => position === index ? { ...slot, ...changes } : slot),
+    }))
   }
 
   function chooseFence(id: string) {
@@ -271,11 +283,38 @@ export function AdminPage({ identity }: { identity: Identity }) {
             <small className="field-hint">Si aún no existe, su cuenta se crea al guardar la clase.</small>
             <label className="field-label" htmlFor="class-campus">Campus</label>
             <select id="class-campus" value={classForm.campusId} onChange={(event) => setClassForm({ ...classForm, campusId: event.target.value, allowedModuleIds: [] })} required><option value="">Selecciona campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select>
-            <div className="field-grid field-grid-three">
-              <div><label className="field-label" htmlFor="class-day">Día</label><select id="class-day" value={classForm.dayOfWeek} onChange={(event) => setClassForm({ ...classForm, dayOfWeek: Number(event.target.value) })}>{DAYS.map((day, index) => <option value={index + 1} key={day}>{day}</option>)}</select></div>
-              <div><label className="field-label" htmlFor="class-start">Inicio</label><input id="class-start" type="time" value={classForm.startTime} onChange={(event) => setClassForm({ ...classForm, startTime: event.target.value })} required /></div>
-              <div><label className="field-label" htmlFor="class-end">Fin</label><input id="class-end" type="time" value={classForm.endTime} onChange={(event) => setClassForm({ ...classForm, endTime: event.target.value })} required /></div>
-            </div>
+            <fieldset className="class-schedules" disabled={savingClass}>
+              <legend className="field-label">Horarios semanales</legend>
+              {classForm.schedules.map((slot, index) => (
+                <div className="class-schedule" key={index}>
+                  <div className="field-grid field-grid-three">
+                    <div>
+                      <label className="field-label" htmlFor={`class-day-${index}`}>Día</label>
+                      <select id={`class-day-${index}`} value={slot.dayOfWeek} onChange={(event) => updateSchedule(index, { dayOfWeek: Number(event.target.value) })}>
+                        {DAYS.map((day, dayIndex) => (
+                          <option key={day} value={dayIndex + 1} disabled={slot.dayOfWeek !== dayIndex + 1 && classForm.schedules.some((other) => other.dayOfWeek === dayIndex + 1)}>{day}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor={`class-start-${index}`}>Inicio</label>
+                      <input id={`class-start-${index}`} type="time" value={slot.startTime} onChange={(event) => updateSchedule(index, { startTime: event.target.value })} required />
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor={`class-end-${index}`}>Fin</label>
+                      <input id={`class-end-${index}`} type="time" value={slot.endTime} onChange={(event) => updateSchedule(index, { endTime: event.target.value })} required />
+                    </div>
+                  </div>
+                  {classForm.schedules.length > 1 && (
+                    <button type="button" className="button button-quiet button-small" aria-label={`Quitar horario de ${DAYS[slot.dayOfWeek - 1]}`}
+                      onClick={() => setClassForm((current) => ({ ...current, schedules: current.schedules.filter((_, position) => position !== index) }))}>
+                      Quitar horario
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button type="button" className="button button-secondary button-small" disabled={classForm.schedules.length === DAYS.length} onClick={addSchedule}>Agregar horario</button>
+            </fieldset>
             <label className="field-label">Módulos permitidos</label>
             <div className="module-picker">
               {eligibleModules.length === 0 ? <span className="field-hint">No hay módulos activos o configurados para este campus.</span> : eligibleModules.map((module) => <label className="check-row" key={module.id}><input type="checkbox" checked={classForm.allowedModuleIds.includes(module.id)} onChange={(event) => setClassForm((current) => ({ ...current, allowedModuleIds: event.target.checked ? [...current.allowedModuleIds, module.id] : current.allowedModuleIds.filter((id) => id !== module.id) }))} />{module.name}{!module.active && <small className="muted"> · inactivo</small>}</label>)}
@@ -288,7 +327,7 @@ export function AdminPage({ identity }: { identity: Identity }) {
         </section>
         <section className="panel class-help-panel">
           <span className="step-number">02</span><span className="eyebrow">Configuración necesaria</span><h2>El registro ordinario depende de la asignación.</h2><p>El sistema cruza la ocurrencia del día con los módulos permitidos y la geocerca del campus. Si no hay clase aplicable, podrás consultar el mapa, pero no se aprobará una asistencia por falta de configuración.</p>
-          <div className="config-list"><div><span className="config-index">A</span><span><strong>Geocerca de campus</strong><small>Define el polígono que contiene módulos.</small></span></div><div><span className="config-index">B</span><span><strong>Módulo</strong><small>Relaciona cada polígono con su campus.</small></span></div><div><span className="config-index">C</span><span><strong>Clase y horario</strong><small>Asigna docente, día y uno o varios módulos.</small></span></div></div>
+          <div className="config-list"><div><span className="config-index">A</span><span><strong>Geocerca de campus</strong><small>Define el polígono que contiene módulos.</small></span></div><div><span className="config-index">B</span><span><strong>Módulo</strong><small>Relaciona cada polígono con su campus.</small></span></div><div><span className="config-index">C</span><span><strong>Clase y horario</strong><small>Asigna docente, horarios semanales y módulos.</small></span></div></div>
         </section>
       </div>}
     </div>

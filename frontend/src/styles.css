@@ -290,6 +290,11 @@ td small { margin-top: 5px; color: #8a9690; font-size: 9px; line-height: 1.5; }
 .admin-map-panel > .notice { margin-top: 13px; }
 .class-admin-layout { display: grid; grid-template-columns: minmax(320px, .95fr) minmax(300px, 1.05fr); align-items: start; gap: 17px; }
 .class-config-panel { padding: 20px; }
+.class-schedules { display: grid; justify-items: start; gap: 8px; min-width: 0; margin: 14px 0 0; padding: 0; border: 0; }
+.class-schedules legend { margin: 0 0 7px; padding: 0; }
+.class-schedule { display: grid; width: 100%; gap: 8px; padding: 8px; border: 1px solid #e4ebe6; border-radius: 7px; }
+.class-schedule .field-label { margin-top: 0; }
+.class-schedule > .button { justify-self: end; }
 .module-picker { display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow: auto; padding: 8px 10px; border: 1px solid #e4ebe6; border-radius: 7px; background: #fafcfa; }
 .module-picker .check-row { margin: 3px 0; }
 .class-help-panel { position: relative; overflow: hidden; padding: 25px; background: linear-gradient(148deg, #fff, #f1f7f2); }

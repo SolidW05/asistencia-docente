@@ -19,7 +19,6 @@ import mx.udg.cut.asistencia.models.campus.Campus;
 import mx.udg.cut.asistencia.models.geofence.Geofence;
 import mx.udg.cut.asistencia.models.geofence.GeofenceType;
 import mx.udg.cut.asistencia.models.schedule.ClassOccurrence;
-import mx.udg.cut.asistencia.models.schedule.ClassSchedule;
 import mx.udg.cut.asistencia.models.schedule.TeachingClass;
 import mx.udg.cut.asistencia.models.teacher.Role;
 import mx.udg.cut.asistencia.models.teacher.Teacher;
@@ -27,7 +26,6 @@ import mx.udg.cut.asistencia.repositories.attendance.AttendanceRepository;
 import mx.udg.cut.asistencia.repositories.campus.CampusRepository;
 import mx.udg.cut.asistencia.repositories.geofence.GeofenceRepository;
 import mx.udg.cut.asistencia.repositories.schedule.ClassOccurrenceRepository;
-import mx.udg.cut.asistencia.repositories.schedule.ClassScheduleRepository;
 import mx.udg.cut.asistencia.repositories.schedule.TeachingClassRepository;
 import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import mx.udg.cut.asistencia.services.chain.ChainAppendService;
@@ -42,6 +40,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -63,7 +62,6 @@ public class AttendanceService {
     private final AttendanceRepository attendances;
     private final ClassOccurrenceRepository occurrences;
     private final TeachingClassRepository classes;
-    private final ClassScheduleRepository schedules;
     private final CampusRepository campuses;
     private final GeofenceRepository geofences;
     private final GeofenceService spatial;
@@ -85,7 +83,6 @@ public class AttendanceService {
             AttendanceRepository attendances,
             ClassOccurrenceRepository occurrences,
             TeachingClassRepository classes,
-            ClassScheduleRepository schedules,
             CampusRepository campuses,
             GeofenceRepository geofences,
             GeofenceService spatial,
@@ -100,7 +97,6 @@ public class AttendanceService {
         this.attendances = attendances;
         this.occurrences = occurrences;
         this.classes = classes;
-        this.schedules = schedules;
         this.campuses = campuses;
         this.geofences = geofences;
         this.spatial = spatial;
@@ -120,7 +116,7 @@ public class AttendanceService {
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CheckResponse check(UUID teacherId, CheckInput request) {
-        return evaluate(teacherId, request, clock.instant()).response();
+        return evaluate(teacherId, request, clock.instant(), false).response();
     }
 
     // READ_COMMITTED es necesario aquí: después del bloqueo del docente, cada consulta debe ver
@@ -167,7 +163,7 @@ public class AttendanceService {
         Instant receivedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
         CheckInput checkInput =
                 new CheckInput(request.occurrenceId(), request.location(), request.locationIssue());
-        Evaluation evaluation = evaluate(teacherId, checkInput, receivedAt);
+        Evaluation evaluation = evaluate(teacherId, checkInput, receivedAt, true);
         if (evaluation.response().requiresJustification()
                 && (blank(request.reason()) || blank(request.justification())))
             throw ApiException.unprocessable(
@@ -424,11 +420,12 @@ public class AttendanceService {
      * Cualquier resultado espacial distinto de módulo permitido o tiempo fuera de ventana requiere revisión.
      * Devuelve evaluación y objetos necesarios para construir evidencia, sin persistir.
      */
-    private Evaluation evaluate(UUID teacherId, CheckInput input, Instant now) {
+    private Evaluation evaluate(UUID teacherId, CheckInput input, Instant now, boolean registering) {
+        Optional<ClassOccurrence> found = registering
+                ? occurrences.findForRegistrationByIdAndTeacherId(input.occurrenceId(), teacherId)
+                : occurrences.findByIdAndTeacherId(input.occurrenceId(), teacherId);
         ClassOccurrence occurrence =
-                occurrences
-                        .findByIdAndTeacherId(input.occurrenceId(), teacherId)
-                        .orElseThrow(
+                found.orElseThrow(
                                 () ->
                                         ApiException.notFound(
                                                 "OCCURRENCE_NOT_FOUND",
@@ -443,7 +440,6 @@ public class AttendanceService {
         if (!assignment.getTeacherId().equals(teacherId))
             throw ApiException.notFound(
                     "OCCURRENCE_NOT_FOUND", "No se encontró una ocurrencia propia para registrar.");
-        ClassSchedule schedule = schedules.findById(assignment.getId()).orElse(null);
         Campus campus = campuses.findById(assignment.getCampusId()).orElse(null);
         Geofence campusFence =
                 geofences
@@ -467,7 +463,7 @@ public class AttendanceService {
                         && campusFence != null
                         && campusFence.isActive()
                         && !configuredModules.isEmpty()
-                        && schedule != null;
+                        && !assignment.getSchedules().isEmpty();
         // La ventana temporal es independiente de la clasificación espacial.
         TemporalResult temporal = temporalResult(occurrence, now);
         SpatialResult result;
@@ -534,7 +530,6 @@ public class AttendanceService {
                 response,
                 occurrence,
                 assignment,
-                schedule,
                 campus,
                 campusFence,
                 configuredModules,
@@ -742,7 +737,6 @@ public class AttendanceService {
             CheckResponse response,
             ClassOccurrence occurrence,
             TeachingClass assignment,
-            ClassSchedule schedule,
             Campus campus,
             Geofence campusFence,
             List<Geofence> modules,

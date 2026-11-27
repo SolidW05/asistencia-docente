@@ -10,6 +10,7 @@ public record ClassView(
         UUID teacherId,
         UUID campusId,
         List<UUID> allowedModuleIds,
+        List<ScheduleSlot> schedules,
         Integer dayOfWeek,
         java.time.LocalTime startTime,
         java.time.LocalTime endTime,

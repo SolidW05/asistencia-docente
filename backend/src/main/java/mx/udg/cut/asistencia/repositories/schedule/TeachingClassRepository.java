@@ -1,11 +1,15 @@
 package mx.udg.cut.asistencia.repositories.schedule;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import mx.udg.cut.asistencia.models.schedule.TeachingClass;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Consulta asignaciones de clase por docente o por creador administrativo.
@@ -16,10 +20,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TeachingClassRepository extends JpaRepository<TeachingClass, UUID> {
     /**
      * Busca asignaciones del docente ordenadas por nombre.
-     * EntityGraph carga los módulos permitidos junto con cada clase.
+     * El bloqueo comparte la lectura con otros docentes y coordina la creación de ocurrencias
+     * con la edición del horario.
      */
-    @EntityGraph(attributePaths = "allowedModules")
-    List<TeachingClass> findByTeacherIdOrderByNameAsc(UUID teacherId);
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    List<TeachingClass> findByTeacherIdOrderByNameAscIdAsc(UUID teacherId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from TeachingClass c where c.id = :id")
+    Optional<TeachingClass> findForUpdate(@Param("id") UUID id);
 
     /**
      * Lista las clases ordenadas por nombre con sus módulos permitidos.

@@ -9,7 +9,7 @@ erDiagram
   TEACHERS ||--o{ TEACHING_CLASSES : imparte
   CAMPUSES ||--o{ GEOFENCES : contiene
   GEOFENCES ||--o{ GEOFENCES : padre
-  TEACHING_CLASSES ||--|| CLASS_SCHEDULES : horario
+  TEACHING_CLASSES ||--|{ CLASS_SCHEDULES : horarios
   TEACHING_CLASSES ||--o{ CLASS_ALLOWED_MODULES : permite
   GEOFENCES ||--o{ CLASS_ALLOWED_MODULES : modulo
   TEACHING_CLASSES ||--o{ CLASS_OCCURRENCES : ocurre
@@ -23,7 +23,7 @@ erDiagram
 
 `teachers` conserva el código como `varchar(7)` con una restricción de siete dígitos. `campuses` permite extender el piloto a otros campus. `geofences` almacena la geometría real y su relación padre/hijo; un trigger sincroniza la columna espacial desde GeoJSON y valida el polígono. `geofence_versions` conserva configuraciones anteriores.
 
-Una clase tiene horario semanal y varios módulos permitidos mediante una tabla de unión. Una ocurrencia representa una fecha concreta y guarda inicio/fin como `timestamptz`. Una asistencia referencia esa ocurrencia y almacena recepción, clasificación temporal/espacial, justificación, ubicación nullable, configuración y payload de cadena.
+Una clase tiene una o varias franjas semanales, identificadas por `(class_id, day_of_week)`, y varios módulos permitidos mediante una tabla de unión. Al iniciar con una base existente, se amplía la clave primaria de horarios y se conservan las franjas guardadas. Una ocurrencia representa una fecha concreta y guarda inicio y fin como `timestamptz`. Una asistencia referencia esa ocurrencia y almacena recepción, clasificación temporal/espacial, justificación, ubicación nullable, configuración y payload de cadena.
 
 Las restricciones únicas impiden repetir una asistencia para el mismo docente/ocurrencia y reutilizar una clave de idempotencia en ese docente. `global_chain_blocks` tiene índice global único y admite varios movimientos por asistencia. El bloque 0 es el único génesis, sin docente/asistencia/fecha; los demás requieren esos campos. `global_chain_head` contiene una sola fila de id 1 con último índice/hash y total de bloques (último índice + 1). Los índices GiST aceleran operaciones espaciales; índices por docente y fecha facilitan historial.
 

@@ -2,17 +2,22 @@ package mx.udg.cut.asistencia.models.schedule;
 
 import mx.udg.cut.asistencia.models.geofence.Geofence;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -44,6 +49,11 @@ public class TeachingClass {
 
     @Column(name = "modified_at")
     private Instant modifiedAt;
+
+    @ElementCollection
+    @CollectionTable(name = "class_schedules", joinColumns = @JoinColumn(name = "class_id"))
+    @OrderBy("dayOfWeek ASC")
+    private List<ClassSchedule> schedules = new ArrayList<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -112,6 +122,15 @@ public class TeachingClass {
 
     public Set<Geofence> getAllowedModules() {
         return allowedModules;
+    }
+
+    public List<ClassSchedule> getSchedules() {
+        return List.copyOf(schedules);
+    }
+
+    public void replaceSchedules(List<ClassSchedule> schedules) {
+        this.schedules.clear();
+        this.schedules.addAll(schedules);
     }
 
     public void update(

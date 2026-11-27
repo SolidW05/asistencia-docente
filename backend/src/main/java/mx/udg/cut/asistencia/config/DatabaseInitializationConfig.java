@@ -60,6 +60,22 @@ public class DatabaseInitializationConfig {
         jdbc.execute(
                 "create index if not exists teaching_classes_created_by_idx "
                         + "on teaching_classes (created_by, name)");
+        jdbc.execute(
+                """
+                do $$
+                begin
+                    if exists (
+                        select 1 from pg_constraint
+                        where conrelid = 'class_schedules'::regclass
+                          and conname = 'class_schedules_pkey'
+                          and cardinality(conkey) = 1
+                    ) then
+                        alter table class_schedules drop constraint class_schedules_pkey,
+                            add primary key (class_id, day_of_week);
+                    end if;
+                end
+                $$;
+                """);
 
         jdbc.execute(
                 "alter table global_chain_blocks drop constraint if exists global_chain_blocks_check");

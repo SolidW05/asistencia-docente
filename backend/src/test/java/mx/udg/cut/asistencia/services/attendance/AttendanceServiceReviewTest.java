@@ -37,7 +37,6 @@ import mx.udg.cut.asistencia.repositories.attendance.AttendanceRepository;
 import mx.udg.cut.asistencia.repositories.campus.CampusRepository;
 import mx.udg.cut.asistencia.repositories.geofence.GeofenceRepository;
 import mx.udg.cut.asistencia.repositories.schedule.ClassOccurrenceRepository;
-import mx.udg.cut.asistencia.repositories.schedule.ClassScheduleRepository;
 import mx.udg.cut.asistencia.repositories.schedule.TeachingClassRepository;
 import mx.udg.cut.asistencia.repositories.teacher.TeacherRepository;
 import mx.udg.cut.asistencia.services.chain.ChainAppendService;
@@ -56,7 +55,6 @@ class AttendanceServiceReviewTest {
     private final AttendanceRepository attendances = mock(AttendanceRepository.class);
     private final ClassOccurrenceRepository occurrences = mock(ClassOccurrenceRepository.class);
     private final TeachingClassRepository classes = mock(TeachingClassRepository.class);
-    private final ClassScheduleRepository schedules = mock(ClassScheduleRepository.class);
     private final CampusRepository campuses = mock(CampusRepository.class);
     private final GeofenceRepository geofences = mock(GeofenceRepository.class);
     private final GeofenceService spatial = mock(GeofenceService.class);
@@ -92,7 +90,6 @@ class AttendanceServiceReviewTest {
                         attendances,
                         occurrences,
                         classes,
-                        schedules,
                         campuses,
                         geofences,
                         spatial,

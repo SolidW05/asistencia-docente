@@ -1,4 +1,4 @@
-import type { AttendanceStatus, LocationIssue, SpatialResult, TemporalResult } from './types'
+import type { AttendanceStatus, LocationIssue, Occurrence, SpatialResult, TemporalResult } from './types'
 
 export function mexicoDate(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -14,8 +14,11 @@ export function formatDateTime(value: string, timeZone = 'America/Mexico_City'):
   }).format(new Date(value))
 }
 
-export function formatTime(value: string): string {
-  return value.slice(0, 5)
+export function formatOccurrenceTime(occurrence: Occurrence, timeZone = 'America/Mexico_City'): string {
+  const formatter = new Intl.DateTimeFormat('es-MX', {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone,
+  })
+  return `${formatter.format(new Date(occurrence.startAt))}–${formatter.format(new Date(occurrence.endAt))}`
 }
 
 export function spatialLabel(value: SpatialResult): string {
